@@ -9,7 +9,7 @@ spec:
     git:
       uri: https://gitlab.corp.local/secops/SBOM-image-scan.git
       ref: main
-    contextDir: images/postgres
+    contextDir: images/openshift/postgres
   strategy:
     type: Docker
     dockerStrategy:
@@ -30,7 +30,7 @@ spec:
     git:
       uri: https://gitlab.corp.local/secops/SBOM-image-scan.git
       ref: main
-    contextDir: images/dtrack-apiserver
+    contextDir: images/openshift/dtrack-apiserver
   strategy:
     type: Docker
     dockerStrategy:
@@ -51,7 +51,7 @@ spec:
     git:
       uri: https://gitlab.corp.local/secops/SBOM-image-scan.git
       ref: main
-    contextDir: images/dtrack-frontend
+    contextDir: images/openshift/dtrack-frontend
   strategy:
     type: Docker
     dockerStrategy:
@@ -72,7 +72,7 @@ spec:
     git:
       uri: https://gitlab.corp.local/secops/SBOM-image-scan.git
       ref: main
-    contextDir: images/trivy-scanner
+    contextDir: images/openshift/trivy-scanner
   strategy:
     type: Docker
     dockerStrategy:

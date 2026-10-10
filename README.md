@@ -7,11 +7,9 @@
 ## 📁 โครงสร้างโปรเจกต์ (Project Structure)
 
 * **`docs/`**: เอกสารสถาปัตยกรรม แผนงาน (`plan-and-tasks.md`), Naming Convention และ [คู่มือรายงาน (`reports.md`)](docs/reports.md)
-* **`images/`**: Dockerfiles สำหรับบิลด์ Image ทั้ง 4 ตัวเข้า Internal Registry
-  * `postgres/`: Hardened PostgreSQL สำหรับ OpenShift Arbitrary UID
-  * `dtrack-apiserver/`: Dependency-Track API Server
-  * `dtrack-frontend/`: Dependency-Track Web UI (Unprivileged Nginx Port 8080)
-  * `trivy-scanner/`: Ephemeral Scanner Image (Trivy + curl + jq + scan script)
+* **`images/`**: Container Images ที่แยกตามสภาพแวดล้อมอย่างเป็นอิสระ:
+  * `local/`: สำหรับ Phase 1 Local Docker Desktop (`postgres`, `dtrack-apiserver`, `dtrack-frontend`, `trivy-scanner` with `scan-local.sh`)
+  * `openshift/`: สำหรับ Phase 2 & 3 OpenShift (`postgres`, `dtrack-apiserver`, `dtrack-frontend` with `/api` reverse proxy, `trivy-scanner` with `oc` CLI & `scan-openshift.sh`)
 * **`phase1-local-poc/`**: สภาพแวดล้อมทดสอบ Local PoC ด้วย Docker Compose และสคริปต์สแกน
 * **`phase2-openshift-core/`**: Manifests ติดตั้งบน OpenShift (`secops-sbom`)
 * **`phase3-ephemeral-worker/`**: K8s Job และ RBAC สำหรับรัน Ephemeral Trivy Scanner
@@ -56,6 +54,37 @@
    * `vulnerabilities-summary.csv` — สรุปจำนวนตาม Severity ต่อ project
 
    ถ้ายังไม่มี finding (ฐานข้อมูลช่องโหว่ยัง sync ไม่เสร็จ) จะได้ไฟล์ที่มีเฉพาะหัวคอลัมน์
+
+---
+
+## 🔴 การใช้งานบน Red Hat OpenShift (Phase 2 & Phase 3)
+
+ระบบรองรับการติดตั้งและใช้งานบน **Red Hat OpenShift (Restricted SCC)** อย่างสมบูรณ์แบบ โดยแยกการทำงานออกจาก Phase 1 อย่างเด็ดขาด:
+
+📖 **คู่มือฉบับเต็ม:** ดูรายละเอียดขั้นตอนการติดตั้ง, นโยบาย Scoped RBAC, และการเชื่อมต่อ CI/CD Pipeline ได้ที่ **[OpenShift Deployment & Operations Guide](docs/openshift-guide.md)**
+
+### สรุปคำสั่งสำคัญบน OpenShift:
+```bash
+# 1. ติดตั้ง Core Stack (Namespace, Postgres, API Server, Frontend TLS Route)
+oc apply -f phase2-openshift-core/namespace.yaml
+oc apply -f phase2-openshift-core/imagestreams/imagestreams.yaml
+oc apply -f phase2-openshift-core/buildconfigs/buildconfigs.yaml
+oc apply -f phase2-openshift-core/postgres/postgres-all.yaml
+oc apply -f phase2-openshift-core/configmap-proxy.yaml
+oc apply -f phase2-openshift-core/dtrack-api-all.yaml
+oc apply -f phase2-openshift-core/dtrack-frontend-all.yaml
+oc apply -f phase2-openshift-core/network-policy.yaml
+
+# 2. Onboard Namespace แอปพลิเคชัน (Option 1 Scoped RBAC - ไม่ต้องใช้ ClusterRole)
+oc apply -f phase3-ephemeral-worker/rbac/onboard-namespace-rbac.yaml -n <APPLICATION_NAMESPACE>
+
+# 3. สั่งสแกน Ephemeral Worker Job (จบใน Pod เดียวบน OpenShift)
+# โหมดที่ 1: สแกน Image ตัวเดียว (CI/CD Pipeline)
+./phase3-ephemeral-worker/test-job-run.sh image-registry.openshift-image-registry.svc:5000/ecommerce-prod/payment-service:v1.2.0 main
+
+# โหมดที่ 2: Scoped Auto-Discovery (สแกนทุก ImageStream ในทุก Namespace ที่มีสิทธิ์)
+./phase3-ephemeral-worker/test-job-run.sh ALL
+```
 
 ---
 

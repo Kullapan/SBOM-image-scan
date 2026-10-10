@@ -67,3 +67,8 @@ yarn-error.log*
 Thumbs.db
 ehthumbs.db
 Desktop.ini
+
+# 10. Container Image Archives & Exports
+*.tar
+*.tar.gz
+*.tgz

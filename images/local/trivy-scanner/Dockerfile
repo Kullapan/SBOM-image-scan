@@ -18,8 +18,8 @@ RUN apk add --no-cache \
 COPY --from=trivy-bin /usr/local/bin/trivy /usr/local/bin/trivy
 
 # Copy self-contained scan and upload entrypoint script
-COPY scan-and-upload.sh /usr/local/bin/scan-and-upload.sh
-RUN chmod +x /usr/local/bin/scan-and-upload.sh
+COPY scan-local.sh /usr/local/bin/scan-local.sh
+RUN chmod +x /usr/local/bin/scan-local.sh
 
 # Configure directories and OpenShift Group 0 (Arbitrary UID) permissions
 RUN mkdir -p /tmp/trivy-cache /tmp/reports && \
@@ -34,4 +34,4 @@ ENV TRIVY_QUIET=false
 # Run as non-root user (Restricted SCC compliant)
 USER 10001
 
-ENTRYPOINT ["/usr/local/bin/scan-and-upload.sh"]
+ENTRYPOINT ["/usr/local/bin/scan-local.sh"]

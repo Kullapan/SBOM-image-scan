@@ -1,0 +1,38 @@
+# ==============================================================================
+# Manifest: onboard-namespace-rbac.yaml
+# Description: Grants sbom-scanner-sa permissions to pull images and read
+#              ImageStream metadata in an application namespace (Option 1).
+# Usage:
+#   oc apply -f onboard-namespace-rbac.yaml -n <APPLICATION_NAMESPACE>
+# ==============================================================================
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: sbom-scanner-image-puller
+  labels:
+    app.kubernetes.io/name: sbom-scanner
+    app.kubernetes.io/part-of: dependency-track
+subjects:
+  - kind: ServiceAccount
+    name: sbom-scanner-sa
+    namespace: secops-sbom
+roleRef:
+  kind: ClusterRole
+  name: system:image-puller
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: sbom-scanner-imagestream-viewer
+  labels:
+    app.kubernetes.io/name: sbom-scanner
+    app.kubernetes.io/part-of: dependency-track
+subjects:
+  - kind: ServiceAccount
+    name: sbom-scanner-sa
+    namespace: secops-sbom
+roleRef:
+  kind: ClusterRole
+  name: view
+  apiGroup: rbac.authorization.k8s.io

@@ -63,8 +63,8 @@ fi
 
 # 3. Build Scanner Image if not exists
 if ! docker image inspect "$SCANNER_IMAGE" >/dev/null 2>&1; then
-    echo "Scanner image '$SCANNER_IMAGE' not found locally. Building from ../images/trivy-scanner..."
-    docker build -t "$SCANNER_IMAGE" "$SCRIPT_DIR/../images/trivy-scanner"
+    echo "Scanner image '$SCANNER_IMAGE' not found locally. Building from ../images/local/trivy-scanner..."
+    docker build -t "$SCANNER_IMAGE" "$SCRIPT_DIR/../images/local/trivy-scanner"
 fi
 
 # 4. Ensure Docker network exists

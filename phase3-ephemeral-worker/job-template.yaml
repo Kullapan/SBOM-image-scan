@@ -31,8 +31,12 @@ spec:
               drop:
                 - ALL
           args:
-            - "${TARGET_IMAGE}"
+            - "${TARGET_IMAGE:-ALL}"
           env:
+            - name: TARGET_IMAGE
+              value: "${TARGET_IMAGE:-ALL}"
+            - name: IMAGE_CREATED
+              value: "${IMAGE_CREATED:-}"
             - name: DTRACK_URL
               value: "http://dtrack-apiserver:8080"
             - name: DTRACK_API_KEY

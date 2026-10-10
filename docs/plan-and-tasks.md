@@ -28,32 +28,30 @@ SBOM-image-scan/
 ### Phase 1: Custom Images & Local PoC
 - [x] **Task 1.1:** จัดทำเอกสารสถาปัตยกรรม แผนงาน และกติกาการตั้งชื่อ Image ใน `docs/`
 - [x] **Task 1.2:** สร้าง Shared Scripts (`scripts/parse-image.sh`, `scripts/dtrack-client.sh`)
-- [x] **Task 1.3:** สร้าง Dockerfiles ทั้ง 4 ตัวใน `images/`:
-  - `images/postgres/` (Hardened PostgreSQL 15, OpenShift GID 0, Custom config & Init SQL)
-  - `images/dtrack-apiserver/` (Dependency-Track API Server, Corporate Proxy & CA support)
-  - `images/dtrack-frontend/` (Nginx unprivileged Port 8080)
-  - `images/trivy-scanner/` (Trivy + curl + jq + `scan-and-upload.sh` entrypoint)
-- [x] **Task 1.4:** สร้าง `phase1-local-poc/docker-compose.yml` และ `.env.example`
+- [x] **Task 1.3:** แยกโครงสร้าง Dockerfiles และ Scanners ออกเป็น 2 ชุดอย่างเด็ดขาดใน `images/`:
+  - `images/local/` (สำหรับ Phase 1 Local Docker: `postgres`, `dtrack-apiserver`, `dtrack-frontend`, `trivy-scanner` with `scan-local.sh`)
+  - `images/openshift/` (สำหรับ Phase 2 & 3 OpenShift: `postgres`, `dtrack-apiserver`, `dtrack-frontend` with `/api` reverse proxy, `trivy-scanner` with `oc` CLI & `scan-openshift.sh`)
+- [x] **Task 1.4:** สร้าง `phase1-local-poc/docker-compose.yml` (context: `../images/local/`) และ `.env.example`
 - [x] **Task 1.5:** สร้างสคริปต์ `phase1-local-poc/scan-local-image.sh` และ `phase1-local-poc/build-sample-image.sh` (รองรับ Flag `--sample`)
 - [x] **Task 1.6:** จัดเตรียม `phase1-local-poc/test-samples/` สำหรับจำลอง Image ทดสอบ (Node.js App พร้อมช่องโหว่ CVE)
-- [x] **Task 1.7:** ทดสอบการบิลด์และรัน Local PoC ตรวจสอบการ Ingest เข้า Dependency-Track (ผ่านการทดสอบ 16/16 Test Cases)
+- [x] **Task 1.7:** ทดสอบการบิลด์และรัน Local PoC ตรวจสอบการ Ingest เข้า Dependency-Track (ผ่านการทดสอบ 19/19 Test Cases ครบ 100%)
 
 ### Phase 2: OpenShift Core Infrastructure
-- [ ] **Task 2.1:** จัดเตรียม OpenShift BuildConfigs & ImageStreams สำหรับทั้ง 4 Images ใน Namespace `secops-sbom`
-- [ ] **Task 2.2:** สร้าง PersistentVolumeClaim (PVC 50-100 GiB) และ Deployment สำหรับ PostgreSQL
-- [ ] **Task 2.3:** สร้าง ConfigMap / Secret สำหรับ Database Credentials และ Corporate Proxy
-- [ ] **Task 2.4:** สร้าง Deployment & Service สำหรับ Dependency-Track API Server
-- [ ] **Task 2.5:** สร้าง Deployment, Service และ OpenShift Route (TLS) สำหรับ Frontend Web UI
-- [ ] **Task 2.6:** กำหนด NetworkPolicy สำหรับจำกัด Traffic ให้เฉพาะ Services ภายใน
+- [x] **Task 2.1:** จัดเตรียม OpenShift BuildConfigs & ImageStreams ชี้ไปยัง `images/openshift/` ใน Namespace `secops-sbom`
+- [x] **Task 2.2:** สร้าง PersistentVolumeClaim (PVC 100 GiB) และ Deployment สำหรับ PostgreSQL (GID 0 & subPath)
+- [x] **Task 2.3:** สร้าง ConfigMap / Secret สำหรับ Database Credentials และ Corporate Proxy
+- [x] **Task 2.4:** สร้าง Deployment & Service สำหรับ Dependency-Track API Server (G1GC 75% MaxRAM & PVC 50 GiB)
+- [x] **Task 2.5:** สร้าง Deployment, Service และ OpenShift TLS Route สำหรับ Frontend Web UI (พร้อม Nginx `/api` Reverse Proxy ป้องกัน CORS)
+- [x] **Task 2.6:** กำหนด NetworkPolicy สำหรับจำกัด Traffic Zero-Trust ให้เฉพาะ Services ภายใน
 
 ### Phase 3: OpenShift Ephemeral Worker Job
-- [ ] **Task 3.1:** สร้าง ServiceAccount (`sbom-scanner-sa`) และ RoleBinding สิทธิ์ `system:image-puller` ข้าม Namespace
-- [ ] **Task 3.2:** สร้าง Kubernetes Job Template สำหรับ Trivy Scanner ภายใต้ Restricted SCC (`runAsNonRoot`, `readOnlyRootFilesystem`, `capabilities.drop: ALL`)
-- [ ] **Task 3.3:** ทดสอบการดึง Image ข้าม Namespace จาก OpenShift Internal Registry ผ่าน SA Token
-- [ ] **Task 3.4:** สคริปต์ Trigger Job บน OpenShift ด้วย `oc create -f`
+- [x] **Task 3.1:** สร้าง ServiceAccount (`sbom-scanner-sa`) และ RBAC Scoped Option 1 (`onboard-namespace-rbac.yaml`: `system:image-puller` + `view`) ไม่ต้องใช้ ClusterRole
+- [x] **Task 3.2:** สร้าง Kubernetes Job Template สำหรับ Trivy Scanner ภายใต้ Restricted SCC (`runAsNonRoot`, `readOnlyRootFilesystem`, `capabilities.drop: ALL`) รองรับพารามิเตอร์ `TARGET_IMAGE` (Single Image & ALL)
+- [x] **Task 3.3:** จัดเตรียม Container Image `trivy-scanner` พร้อม `oc` CLI และ `scan-openshift.sh` ดึง Image ข้าม Namespace และอ่าน ImageStream Create Date อัตโนมัติ
+- [x] **Task 3.4:** สร้างสคริปต์ `test-job-run.sh` สำหรับสั่งรัน Job และสตรีม Logs ทั้งโหมด Pipeline และ Scoped Auto-Discovery
 
 ### Phase 4: Automation & Scheduled Audit (Future Scope)
-- [ ] **Task 4.1:** ออกแบบ CronJob Template (`cronjob-weekly-audit.yaml`) สำหรับ Re-scan Image ย้อนหลัง
+- [ ] **Task 4.1:** ออกแบบ CronJob Template (`cronjob-weekly-audit.yaml`) สำหรับรัน `scan-openshift.sh ALL` รายสัปดาห์
 - [ ] **Task 4.2:** รวบรวมข้อกำหนดสำหรับ Event Receiver Service สำหรับดักจับ `ImageStreamTag` Events
 
 ---

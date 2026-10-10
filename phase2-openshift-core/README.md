@@ -1,5 +1,7 @@
 # Phase 2: OpenShift Core Infrastructure
 
+> 📖 **คู่มือฉบับสมบูรณ์:** ดูรายละเอียดสถาปัตยกรรม, Scoped RBAC, และขั้นตอนทั้งหมดได้ที่ **[OpenShift Deployment & Operations Guide](../docs/openshift-guide.md)**
+
 ชุด Manifests สำหรับติดตั้งระบบบริหารจัดการ SBOM (Dependency-Track & PostgreSQL) บน Red Hat OpenShift:
 
 ## ส่วนประกอบ Manifests

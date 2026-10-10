@@ -1,7 +1,7 @@
 services:
   dtrack-db:
     build:
-      context: ../images/postgres
+      context: ../images/local/postgres
     image: custom-postgres:15-dtrack
     container_name: dtrack-db
     restart: unless-stopped
@@ -21,7 +21,7 @@ services:
 
   dtrack-apiserver:
     build:
-      context: ../images/dtrack-apiserver
+      context: ../images/local/dtrack-apiserver
     image: custom-dtrack-apiserver:latest
     container_name: dtrack-apiserver
     restart: unless-stopped
@@ -44,7 +44,7 @@ services:
 
   dtrack-frontend:
     build:
-      context: ../images/dtrack-frontend
+      context: ../images/local/dtrack-frontend
     image: custom-dtrack-frontend:latest
     container_name: dtrack-frontend
     restart: unless-stopped
