@@ -1,0 +1,105 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dtrack-frontend
+  namespace: secops-sbom
+  labels:
+    app.kubernetes.io/name: dtrack-frontend
+    app.kubernetes.io/part-of: dependency-track
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dtrack-frontend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: dtrack-frontend
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: dtrack-frontend
+          image: image-registry.openshift-image-registry.svc:5000/secops-sbom/dtrack-frontend:latest
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          env:
+            - name: API_BASE_URL
+              value: "" # Empty means frontend uses same host or reverse proxy path
+          ports:
+            - name: http
+              containerPort: 8080
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          volumeMounts:
+            - name: tmp-dir
+              mountPath: /tmp
+            - name: nginx-cache
+              mountPath: /var/cache/nginx
+            - name: nginx-logs
+              mountPath: /var/log/nginx
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 15
+      volumes:
+        - name: tmp-dir
+          emptyDir: {}
+        - name: nginx-cache
+          emptyDir: {}
+        - name: nginx-logs
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dtrack-frontend
+  namespace: secops-sbom
+  labels:
+    app.kubernetes.io/name: dtrack-frontend
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+  selector:
+    app.kubernetes.io/name: dtrack-frontend
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: dependency-track
+  namespace: secops-sbom
+  labels:
+    app.kubernetes.io/name: dtrack-frontend
+spec:
+  to:
+    kind: Service
+    name: dtrack-frontend
+    weight: 100
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

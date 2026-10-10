@@ -1,0 +1,83 @@
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: bc-postgres-dtrack
+  namespace: secops-sbom
+spec:
+  source:
+    type: Git
+    git:
+      uri: https://gitlab.corp.local/secops/SBOM-image-scan.git
+      ref: main
+    contextDir: images/postgres
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: Dockerfile
+  output:
+    to:
+      kind: ImageStreamTag
+      name: postgres-dtrack:latest
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: bc-dtrack-apiserver
+  namespace: secops-sbom
+spec:
+  source:
+    type: Git
+    git:
+      uri: https://gitlab.corp.local/secops/SBOM-image-scan.git
+      ref: main
+    contextDir: images/dtrack-apiserver
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: Dockerfile
+  output:
+    to:
+      kind: ImageStreamTag
+      name: dtrack-apiserver:latest
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: bc-dtrack-frontend
+  namespace: secops-sbom
+spec:
+  source:
+    type: Git
+    git:
+      uri: https://gitlab.corp.local/secops/SBOM-image-scan.git
+      ref: main
+    contextDir: images/dtrack-frontend
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: Dockerfile
+  output:
+    to:
+      kind: ImageStreamTag
+      name: dtrack-frontend:latest
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: bc-trivy-scanner
+  namespace: secops-sbom
+spec:
+  source:
+    type: Git
+    git:
+      uri: https://gitlab.corp.local/secops/SBOM-image-scan.git
+      ref: main
+    contextDir: images/trivy-scanner
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: Dockerfile
+  output:
+    to:
+      kind: ImageStreamTag
+      name: trivy-scanner:latest

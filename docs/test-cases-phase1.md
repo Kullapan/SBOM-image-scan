@@ -1,0 +1,103 @@
+# Test Cases Specification: Phase 1 (Local PoC)
+
+เอกสารแผนการทดสอบ เกณฑ์การยอมรับ และผลการรันการทดสอบจริง (Execution Results) ในสภาพแวดล้อม **Phase 1: Local PoC**
+
+---
+
+## 1. วัตถุประสงค์การทดสอบ (Test Objectives)
+1. ยืนยันความพร้อมของ **In-House Images ทั้ง 4 ตัว** (`postgres`, `dtrack-apiserver`, `dtrack-frontend`, `trivy-scanner`) ว่าสามารถบิลด์และเชื่อมต่อกันได้อย่างถูกต้อง
+2. ยืนยันหลักการ **Zero Code Execution** ว่าการสกัด SBOM เกิดจาก Static Layer Inspection ล้วนๆ ไม่มีการรัน Application Container เป้าหมาย
+3. ยืนยันการสกัดชื่อ Image ตาม **Naming Convention** และการจัดกลุ่ม **Parent/Child Portfolio** ใน Dependency-Track แบบอัตโนมัติ
+4. ยืนยันการประมวลผล **CycloneDX SBOM (OS + App Packages)**, การจับคู่ CVE, และการแสดงผลบน Web Dashboard
+
+---
+
+## 2. รายละเอียดชุดการทดสอบและผลการทดสอบจริง (Test Matrix & Actual Results)
+
+### กลุ่มที่ 1: การ Build และความสมบูรณ์ของ Custom Images (Infrastructure Tests)
+
+| Test Case ID | หัวข้อการทดสอบ | ขั้นตอนการทดสอบ (Steps) | ผลลัพธ์ที่คาดหวัง (Expected Results) | สถานะ |
+| :--- | :--- | :--- | :--- | :---: |
+| **TC-P1-01** | ตรวจสอบการ Build 3 Services ใน Compose จาก `images/` | 1. เข้าโฟลเดอร์ `phase1-local-poc/`<br>2. รัน `docker compose up -d --build`<br>3. ตรวจสอบสถานะด้วย `docker compose ps` | • Image `custom-postgres`, `custom-dtrack-apiserver`, `custom-dtrack-frontend` บิลด์สำเร็จ<br>• Container ทั้ง 3 สตาร์ทติดและ Healthcheck ผ่าน (`healthy`) | **PASS** [x] |
+| **TC-P1-02** | ตรวจสอบการ Build `trivy-scanner` Image | รันคำสั่ง:<br>`docker build -t custom-trivy-scanner:latest ../images/trivy-scanner` | • Image ขนาด 50.9 MB (<100 MB) บิลด์สำเร็จ<br>• มี binary `trivy`, `curl`, `jq` พร้อมใช้งานภายใน Container | **PASS** [x] |
+| **TC-P1-03** | ตรวจสอบการเข้าถึง Web UI | 1. เปิด Browser ไปที่ `http://localhost:8080`<br>2. ล็อกอินด้วย `admin` / `admin`<br>3. ตั้งรหัสผ่านใหม่เป็น `Admin12345!` | • หน้า Dashboard ของ Dependency-Track แสดงผลสมบูรณ์<br>• สามารถสร้าง Automation API Key จากเมนู Administration ได้ | **PASS** [x] |
+
+---
+
+### กลุ่มที่ 2: การสร้าง SBOM และความปลอดภัย (Static Layer Extraction Tests)
+
+| Test Case ID | หัวข้อการทดสอบ | ขั้นตอนการทดสอบ (Steps) | ผลลัพธ์ที่คาดหวัง (Expected Results) | สถานะ |
+| :--- | :--- | :--- | :--- | :---: |
+| **TC-P1-04** | บิลด์ Sample Application Image | รันคำสั่ง:<br>`./build-sample-image.sh` | • ได้ Image `ecommerce-prod/payment-service:v1.0.0` อยู่ใน Local Docker | **PASS** [x] |
+| **TC-P1-05** | Zero Code Execution Verification | สั่งสแกนผ่าน Trivy Container โดยสังเกตสถานะของ Container เป้าหมายด้วย `docker ps` | • **ไม่มีการสั่งรัน** `ecommerce-prod/payment-service` ขึ้นมาทำงานในระบบ<br>• Trivy สกัดข้อมูลผ่าน File Layer Extraction ล้วนๆ | **PASS** [x] |
+| **TC-P1-06** | CycloneDX Full-Stack SBOM Validation | ตรวจสอบผลลัพธ์ SBOM ชั่วคราวใน Trivy Container | • ได้ไฟล์ CycloneDX JSON (v1.6) ที่มีโครงสร้างถูกต้อง<br>• สกัดครบ 2 ชั้น: **OS Packages** (Alpine 17 pkgs) และ **Application Packages** (NPM packages) | **PASS** [x] |
+
+---
+
+### กลุ่มที่ 3: การ Mapping Portfolio Hierarchy (Naming Convention Tests)
+
+| Test Case ID | หัวข้อการทดสอบ | ขั้นตอนการทดสอบ (Steps) | ผลลัพธ์ที่คาดหวัง (Expected Results) | สถานะ |
+| :--- | :--- | :--- | :--- | :---: |
+| **TC-P1-07** | การสกัดชื่อแบบมาตรฐาน (`app/service:tag`) | สั่งสแกน Image:<br>`ecommerce-prod/payment-service:v1.0.0` | • Parent App: `ecommerce-prod`<br>• Parent Version: `main`<br>• Project Name: `payment-service`<br>• Project Version: `v1.0.0` | **PASS** [x] |
+| **TC-P1-08** | การสกัดชื่อ Image ที่มี Registry Host นำหน้า | ทดสอบผ่าน Regex Helper ด้วย Image:<br>`image-registry.corp:5000/core-banking/auth-service:v2.0.0` | • สคริปต์ตัด Registry Host ออกอย่างถูกต้อง<br>• Parent App: `core-banking`<br>• Project Name: `auth-service` (Tag: `v2.0.0`) | **PASS** [x] |
+| **TC-P1-09** | Fallback กรณี Image ไม่มี Slash (Single Word) | ทดสอบสกัด Image:<br>`standalone-service:1.0` | • Parent App กลายเป็น `default-portfolio`<br>• Project Name: `standalone-service` ไม่พบ Error | **PASS** [x] |
+
+---
+
+### กลุ่มที่ 4: การ Ingest และ Tracking ผ่าน API (API Ingestion Tests)
+
+| Test Case ID | หัวข้อการทดสอบ | ขั้นตอนการทดสอบ (Steps) | ผลลัพธ์ที่คาดหวัง (Expected Results) | สถานะ |
+| :--- | :--- | :--- | :--- | :---: |
+| **TC-P1-10** | Automated Project Provisioning (`autoCreate=true`) | สั่งสแกน Image ใหม่ที่ยังไม่เคยมีใน Dependency-Track | • API Server ตอบรับ BOM (`HTTP 200/201`) พร้อม Token UUID<br>• สร้าง Parent และ Child Project ให้อัตโนมัติ โดยไม่ต้องสร้างมือก่อน | **PASS** [x] |
+| **TC-P1-11** | Ingestion Status Polling (Token Check) | สังเกต Log ตอนสคริปต์สแกนกำลังยิง Token ไปที่ `/api/v1/bom/token/{token}` | • สคริปต์รอจนกว่า `processing: false`<br>• แสดงข้อความยืนยันความสำเร็จ | **PASS** [x] |
+
+---
+
+### กลุ่มที่ 5: การตรวจจับช่องโหว่ (Vulnerability Engine Verification)
+
+| Test Case ID | หัวข้อการทดสอบ | ขั้นตอนการทดสอบ (Steps) | ผลลัพธ์ที่คาดหวัง (Expected Results) | สถานะ |
+| :--- | :--- | :--- | :--- | :---: |
+| **TC-P1-12** | Component Inventory Check | เข้าไปที่ UI หน้า Project `payment-service (v1.0.0)` | • พบรายการ Components ครบถ้วน (277 components รวม `express`, `lodash`, `axios`) | **PASS** [x] |
+| **TC-P1-13** | Known CVE Detection | ตรวจสอบแท็บ **Vulnerabilities** ของโปรเจกต์ `payment-service` | • ตรวจพบช่องโหว่ความปลอดภัยที่ตรงกับเวอร์ชันล้าสมัยของ Sample App พร้อมแสดง CVSS และ Severity | **PASS** [x] |
+| **TC-P1-14** | Hierarchical Metrics Roll-up | ตรวจสอบหน้า Parent Project `ecommerce-prod` | • สถิติช่องโหว่และจำนวน Component จาก Child Project (`payment-service`) ถูก Roll-up ขึ้นมาแสดงในระดับ Parent App โดยอัตโนมัติ | **PASS** [x] |
+
+---
+
+### กลุ่มที่ 6: การจัดการข้อผิดพลาด (Negative & Error Handling Tests)
+
+| Test Case ID | หัวข้อการทดสอบ | ขั้นตอนการทดสอบ (Steps) | ผลลัพธ์ที่คาดหวัง (Expected Results) | สถานะ |
+| :--- | :--- | :--- | :--- | :---: |
+| **TC-P1-15** | สั่งสแกนโดยไม่ระบุ API Key | รัน `./scan-local-image.sh` โดยที่ไม่มี `DTRACK_API_KEY` | • สคริปต์ต้องหยุดทำงานทันที<br>• แสดงคำแนะนำวิธีการเข้าไป Generate API Key จาก UI อย่างชัดเจน | **PASS** [x] |
+| **TC-P1-16** | สั่งสแกน Image ที่ไม่มีอยู่จริง | รัน `./scan-local-image.sh non-existent-app/ghost:latest` | • Trivy แจ้ง Error ว่าไม่พบ Image<br>• สคริปต์ Exit gracefully และไม่ส่ง BOM เปล่าเข้า Dependency-Track | **PASS** [x] |
+
+---
+
+## 3. สรุปปัญหาที่พบในขั้นตอนการทดสอบและการแก้ไข (Issues Found & Resolutions)
+
+### Issue 1: PostgreSQL Permission Denied บน Directory `/var/lib/postgresql/data`
+* **สาเหตุ:** ใน `images/postgres/Dockerfile` มีการระบุ `USER 1001` ทำให้ entrypoint ของ `postgres:15-alpine` ไม่สามารถรัน `chmod 700` บน Docker volume ได้
+* **การแก้ไข:** นำ `USER 1001` ออกจาก Dockerfile เพื่อให้ entrypoint จัดการ permissions ในช่วงบูต และสลับไปใช้ user `postgres` อัตโนมัติ พร้อมตั้ง `ENV PGDATA=/var/lib/postgresql/data/pgdata`
+
+### Issue 2: Docker Socket Permission บน Docker Desktop
+* **สาเหตุ:** Container `trivy-scanner` รันด้วย non-root user `10001` ทำให้ไม่สามารถอ่าน `/var/run/docker.sock` บนโฮสต์ของ Docker Desktop ได้
+* **การแก้ไข:** เพิ่ม flag `--user 0` ใน `phase1-local-poc/scan-local-image.sh` เฉพาะตอนรันในโฮสต์ Local PoC (หมายเหตุ: ใน OpenShift Phase 3 จะไม่ต้องใช้ flag นี้เนื่องจาก Trivy ดึง layer ผ่าน OpenShift Internal Registry API แทน)
+
+### Issue 3: Parent Project 404 Not Found เมื่ออัปโหลด BOM ครั้งแรก
+* **สาเหตุ:** Endpoint `/api/v1/bom` ของ Dependency-Track แม้จะระบุ `autoCreate=true` จะสร้างเฉพาะ Child Project ให้ แต่หาก `parentName` ยังไม่มีในระบบ จะตอบกลับเป็น `HTTP 404: The parent component could not be found`
+* **การแก้ไข:** อัปเดต `images/trivy-scanner/scan-and-upload.sh` ให้ทำการ Auto-Create/Ensure Parent Project ผ่าน `PUT /api/v1/project` ล่วงหน้า พร้อมดึง `parentUUID` ส่งแนบไปใน Request ทำให้ Parent/Child ผูกกันแบบ 100% Deterministic
+
+---
+
+## 4. สิ่งที่ต้องตั้งค่าเพิ่มเติม (Configuration Setup)
+1. **Admin Credentials:** รหัสผ่านเริ่มต้นถูกเปลี่ยนเป็น:
+   * **Username:** `admin`
+   * **Password:** `Admin12345!`
+2. **Automation Team Permissions:** ใน Dependency-Track ได้ทำการมอบสิทธิ์ให้กับทีม `Automation`:
+   * `BOM_UPLOAD`
+   * `PROJECT_CREATION_UPLOAD`
+   * `PORTFOLIO_MANAGEMENT`
+   * `VIEW_PORTFOLIO`
+   * `VIEW_VULNERABILITY`
+   * `VULNERABILITY_ANALYSIS`
+3. **API Key:** คีย์ของทีม Automation ถูกตั้งค่าลงใน `phase1-local-poc/.env`:
+   `DTRACK_API_KEY=odt_SHFUe9d8eUqjIUf4GXf84tUTknzoB6lc`

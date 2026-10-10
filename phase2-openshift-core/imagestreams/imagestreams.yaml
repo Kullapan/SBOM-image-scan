@@ -1,0 +1,23 @@
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: postgres-dtrack
+  namespace: secops-sbom
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: dtrack-apiserver
+  namespace: secops-sbom
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: dtrack-frontend
+  namespace: secops-sbom
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: trivy-scanner
+  namespace: secops-sbom

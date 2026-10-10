@@ -1,0 +1,66 @@
+services:
+  dtrack-db:
+    build:
+      context: ../images/postgres
+    image: custom-postgres:15-dtrack
+    container_name: dtrack-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-dtrack}
+      POSTGRES_USER: ${POSTGRES_USER:-dtrack}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dtrackpassword}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - sbom-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dtrack} -d ${POSTGRES_DB:-dtrack}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  dtrack-apiserver:
+    build:
+      context: ../images/dtrack-apiserver
+    image: custom-dtrack-apiserver:latest
+    container_name: dtrack-apiserver
+    restart: unless-stopped
+    depends_on:
+      dtrack-db:
+        condition: service_healthy
+    ports:
+      - "${DTRACK_API_PORT:-8081}:8080"
+    environment:
+      ALPINE_DATABASE_MODE: external
+      ALPINE_DATABASE_URL: jdbc:postgresql://dtrack-db:5432/${POSTGRES_DB:-dtrack}
+      ALPINE_DATABASE_DRIVER: org.postgresql.Driver
+      ALPINE_DATABASE_USERNAME: ${POSTGRES_USER:-dtrack}
+      ALPINE_DATABASE_PASSWORD: ${POSTGRES_PASSWORD:-dtrackpassword}
+      EXTRA_JAVA_OPTIONS: ${DTRACK_EXTRA_JAVA_OPTIONS:-}
+    volumes:
+      - dtrack-data:/data
+    networks:
+      - sbom-net
+
+  dtrack-frontend:
+    build:
+      context: ../images/dtrack-frontend
+    image: custom-dtrack-frontend:latest
+    container_name: dtrack-frontend
+    restart: unless-stopped
+    depends_on:
+      - dtrack-apiserver
+    ports:
+      - "${DTRACK_FRONTEND_PORT:-8080}:8080"
+    environment:
+      API_BASE_URL: ${API_BASE_URL:-http://localhost:8081}
+    networks:
+      - sbom-net
+
+networks:
+  sbom-net:
+    name: sbom-poc-net
+
+volumes:
+  postgres-data:
+  dtrack-data:

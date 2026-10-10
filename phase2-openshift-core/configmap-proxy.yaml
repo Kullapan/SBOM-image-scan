@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: corporate-proxy-config
+  namespace: secops-sbom
+data:
+  # Configure corporate HTTP proxy for NVD feeds and Repository Analyzer
+  HTTP_PROXY: ""
+  HTTPS_PROXY: ""
+  NO_PROXY: "localhost,127.0.0.1,postgres,dtrack-apiserver,dtrack-frontend,image-registry.openshift-image-registry.svc"
+  # Java Options format for Dependency-Track API Server
+  EXTRA_JAVA_OPTIONS: "-XX:+UseG1GC -XX:MaxRAMPercentage=75.0"

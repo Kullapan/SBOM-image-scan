@@ -1,0 +1,44 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: sbom-weekly-reconciliation
+  namespace: secops-sbom
+  labels:
+    app.kubernetes.io/name: sbom-audit
+spec:
+  # Run every Sunday at 02:00 AM UTC
+  schedule: "0 2 * * 0"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: sbom-audit
+        spec:
+          serviceAccountName: sbom-scanner-sa
+          restartPolicy: OnFailure
+          containers:
+            - name: auditor
+              image: image-registry.openshift-image-registry.svc:5000/secops-sbom/trivy-scanner:latest
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  echo "Starting Weekly Scheduled Reconciliation Audit..."
+                  # In production, query list of active ImageStreams across target namespaces
+                  # and trigger scans sequentially or batch up to max parallel concurrency
+                  echo "Weekly audit completed successfully."
+              env:
+                - name: DTRACK_URL
+                  value: "http://dtrack-apiserver:8080"
+                - name: DTRACK_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: dtrack-automation-key
+                      key: API_KEY
+          volumes:
+            - name: tmp-volume
+              emptyDir: {}

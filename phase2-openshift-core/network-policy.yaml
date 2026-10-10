@@ -1,0 +1,52 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-internal-dtrack-traffic
+  namespace: secops-sbom
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow OpenShift Ingress Router to Frontend
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              network.openshift.io/policy-group: ingress
+      ports:
+        - protocol: TCP
+          port: 8080
+    # Allow intra-namespace traffic (Frontend -> API, API -> DB, Scanner -> API)
+    - from:
+        - podSelector: {}
+  egress:
+    # Allow intra-namespace communication
+    - to:
+        - podSelector: {}
+    # Allow DNS lookup (CoreDNS)
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Allow connection to OpenShift Internal Registry (Port 5000)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: openshift-image-registry
+      ports:
+        - protocol: TCP
+          port: 5000
+    # Allow API Server Egress to Corporate HTTP/HTTPS Proxy (e.g. 8080, 3128, 443)
+    - ports:
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 3128

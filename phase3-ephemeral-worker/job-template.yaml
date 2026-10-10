@@ -1,0 +1,61 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: sbom-scan-job-${JOB_ID}
+  namespace: secops-sbom
+  labels:
+    app.kubernetes.io/name: sbom-scanner
+    app.kubernetes.io/component: ephemeral-worker
+spec:
+  ttlSecondsAfterFinished: 600
+  backoffLimit: 1
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: sbom-scanner
+    spec:
+      serviceAccountName: sbom-scanner-sa
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: trivy-scanner
+          image: image-registry.openshift-image-registry.svc:5000/secops-sbom/trivy-scanner:latest
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          args:
+            - "${TARGET_IMAGE}"
+          env:
+            - name: DTRACK_URL
+              value: "http://dtrack-apiserver:8080"
+            - name: DTRACK_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dtrack-automation-key
+                  key: API_KEY
+            - name: PARENT_VERSION
+              value: "${PARENT_VERSION:-main}"
+            - name: TRIVY_CACHE_DIR
+              value: "/tmp/trivy-cache"
+            - name: HOME
+              value: "/tmp"
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "2000m"
+              memory: "2Gi"
+          volumeMounts:
+            - name: tmp-volume
+              mountPath: /tmp
+      volumes:
+        - name: tmp-volume
+          emptyDir: {}

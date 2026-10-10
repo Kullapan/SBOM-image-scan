@@ -1,0 +1,14 @@
+{
+  "name": "sample-payment-api",
+  "version": "1.0.0",
+  "description": "Sample application to verify SBOM extraction and vulnerability scanning",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js"
+  },
+  "dependencies": {
+    "express": "4.16.0",
+    "lodash": "4.17.15",
+    "axios": "0.21.1"
+  }
+}
