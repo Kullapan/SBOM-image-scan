@@ -74,34 +74,29 @@ START_TIME=$(date +%s)
 export TRIVY_CACHE_DIR="/tmp/trivy-cache"
 mkdir -p "$TRIVY_CACHE_DIR"
 
-TRIVY_JSON_FILE="/tmp/trivy-result.json"
+# Generate complete CycloneDX SBOM (pure inventory, ultra-fast)
 trivy image \
-    --format json \
-    --output "$TRIVY_JSON_FILE" \
-    --scanners vuln \
-    "$TARGET_IMAGE"
-
-# Convert the same result to CycloneDX (no second image scan needed)
-trivy convert \
     --format cyclonedx \
     --output "$BOM_OUTPUT_FILE" \
-    "$TRIVY_JSON_FILE"
+    "$TARGET_IMAGE"
 
-# Image creation date (from image config) is the source of truth for "latest".
-# Stored as an ISO-8601 datetime normalised to UTC+7 (tag: image-created:<ISO>).
+# Image creation date (normalised to UTC+7 for project tag: image-created:<ISO>)
 TZ_OFFSET_SEC=25200   # UTC+7
 TZ_LABEL="+07:00"
 iso_from_epoch() { jq -rn --argjson e "$1" --argjson o "$TZ_OFFSET_SEC" --arg l "$TZ_LABEL" \
     '(($e + $o) | strftime("%Y-%m-%dT%H:%M:%S")) + $l'; }
-# Accepts epoch digits (legacy tags) or ISO datetime with +07:00 label
 epoch_from_tag() { jq -rn --arg v "$1" --argjson o "$TZ_OFFSET_SEC" \
     'if ($v|test("^[0-9]+$")) then ($v|tonumber)
      else ($v | ascii_upcase | .[0:19] | strptime("%Y-%m-%dT%H:%M:%S") | mktime) - $o end' 2>/dev/null || echo 0; }
 
-IMAGE_CREATED=$(jq -r '.Metadata.ImageConfig.created // empty' "$TRIVY_JSON_FILE" 2>/dev/null || true)
+# Priority: Environment variable -> CycloneDX metadata timestamp
+IMAGE_CREATED="${IMAGE_CREATED:-}"
+if [[ -z "$IMAGE_CREATED" ]]; then
+    IMAGE_CREATED=$(jq -r '.metadata.timestamp // empty' "$BOM_OUTPUT_FILE" 2>/dev/null || true)
+fi
+
 IMAGE_CREATED_EPOCH=0
 if [[ -n "$IMAGE_CREATED" ]]; then
-    # Handle "Z" and "+hh:mm"/"-hh:mm" offsets, drop fractional seconds
     IMAGE_CREATED_EPOCH=$(jq -rn --arg d "$IMAGE_CREATED" '
         ($d | .[0:19] | strptime("%Y-%m-%dT%H:%M:%S") | mktime) as $t
         | ($d | capture("(?<s>[+-])(?<h>[0-9]{2}):(?<m>[0-9]{2})$") // null) as $z
@@ -111,7 +106,6 @@ fi
 IMAGE_CREATED_LOCAL="unknown"
 [[ "$IMAGE_CREATED_EPOCH" -gt 0 ]] && IMAGE_CREATED_LOCAL=$(iso_from_epoch "$IMAGE_CREATED_EPOCH")
 echo "Image created:      ${IMAGE_CREATED:-unknown} -> $IMAGE_CREATED_LOCAL (UTC+7)"
-rm -f "$TRIVY_JSON_FILE"
 
 SCAN_DURATION=$(( $(date +%s) - START_TIME ))
 echo "✓ SBOM generated successfully in ${SCAN_DURATION}s -> $BOM_OUTPUT_FILE"

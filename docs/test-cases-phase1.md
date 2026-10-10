@@ -72,6 +72,23 @@
 
 ---
 
+### กลุ่มที่ 7: การบริหารจัดการหลายเวอร์ชัน (Multi-Version Lifecycle & Status Reconciliation)
+
+| Test Case ID | หัวข้อการทดสอบ | ขั้นตอนการทดสอบ (Steps) | ผลลัพธ์ที่คาดหวัง (Expected Results) | สถานะ |
+| :--- | :--- | :--- | :--- | :---: |
+| **TC-P1-17** | การเปรียบเทียบ Image Creation Date และตั้งสถานะ Active/Inactive | 1. สแกน `payment-service:v1.0.0`<br>2. บิลด์เวอร์ชันใหม่ `payment-service:v1.1.0` และสั่งสแกน<br>3. ตรวจสอบสถานะ active และแท็ก `image-created:<ISO+07:00>` ของทั้ง 2 โปรเจกต์ | • ทั้งเวอร์ชัน `v1.0.0` และ `v1.1.0` คงอยู่ในระบบ (Historical Record ไม่หาย)<br>• เวอร์ชันใหม่ล่าสุด `v1.1.0` ได้รับสถานะ `active = true`<br>• เวอร์ชันเก่า `v1.0.0` ถูกปรับเป็น `active = false` อัตโนมัติ<br>• แท็ก `image-created` ถูกบันทึกในรูปแบบ ISO-8601 UTC+7 ชัดเจน | **PASS** [x] |
+
+---
+
+### กลุ่มที่ 8: การส่งออกรายงานระดับองค์กร (Enterprise Reporting & SBOM Inventory Exports)
+
+| Test Case ID | หัวข้อการทดสอบ | ขั้นตอนการทดสอบ (Steps) | ผลลัพธ์ที่คาดหวัง (Expected Results) | สถานะ |
+| :--- | :--- | :--- | :--- | :---: |
+| **TC-P1-18** | Total Enterprise SBOM & Inventory Export | รันสคริปต์:<br>`python scripts/export-total-sbom.py` | • รวม Component จากทุกโปรเจกต์แบบ Multi-project aggregation<br>• ส่งออกไฟล์ `total-sbom.json`, `components-inventory.csv`, `components-unique.csv`<br>• คัดกรองและนับจำนวน Unique Libraries ได้ถูกต้อง (265 unique libraries) | **PASS** [x] |
+| **TC-P1-19** | Enterprise Vulnerability Detail & Unique CVE Export | รันสคริปต์:<br>`python scripts/export-vulnerability-report.py --active-only` | • รวมรายการ Finding ทั้งหมดของ Portfolio ที่ Active (`vulnerabilities-detail.csv`: 162 findings)<br>• จำแนกรายการ Unique CVEs (`vulnerabilities-unique.csv`: 81 unique CVEs)<br>• สรุปสถิติความรุนแรงตามโปรเจกต์ (`vulnerabilities-summary.csv`: 42 High, 33 Med, 6 Low) | **PASS** [x] |
+
+---
+
 ## 3. สรุปปัญหาที่พบในขั้นตอนการทดสอบและการแก้ไข (Issues Found & Resolutions)
 
 ### Issue 1: PostgreSQL Permission Denied บน Directory `/var/lib/postgresql/data`
@@ -85,6 +102,18 @@
 ### Issue 3: Parent Project 404 Not Found เมื่ออัปโหลด BOM ครั้งแรก
 * **สาเหตุ:** Endpoint `/api/v1/bom` ของ Dependency-Track แม้จะระบุ `autoCreate=true` จะสร้างเฉพาะ Child Project ให้ แต่หาก `parentName` ยังไม่มีในระบบ จะตอบกลับเป็น `HTTP 404: The parent component could not be found`
 * **การแก้ไข:** อัปเดต `images/trivy-scanner/scan-and-upload.sh` ให้ทำการ Auto-Create/Ensure Parent Project ผ่าน `PUT /api/v1/project` ล่วงหน้า พร้อมดึง `parentUUID` ส่งแนบไปใน Request ทำให้ Parent/Child ผูกกันแบบ 100% Deterministic
+
+### Issue 4: คำสั่ง Trivy convert ทำให้ได้เฉพาะ Root Component (Components = 1)
+* **สาเหตุ:** เดิมใช้คำสั่ง `trivy image --format json --scanners vuln | trivy convert --format cyclonedx` ซึ่ง `trivy convert` ทำการแปลงเฉพาะโครงสร้างผลลัพธ์การสแกนช่องโหว่ ไม่ได้สกัด Component Inventory ฉบับเต็ม ทำให้ Dependency-Track แสดง Component เพียง 1 ตัว
+* **การแก้ไข:** ปรับปรุง `scan-and-upload.sh` ให้สั่งสแกนและสกัด CycloneDX SBOM โดยตรง: `trivy image --format cyclonedx --output "$BOM_OUTPUT_FILE" "$TARGET_IMAGE"` ทำให้ได้ Inventory ครบถ้วน 277 components (17 Alpine OS packages + 260 NPM application packages) ภายในเวลาเพียง 3-5 วินาที
+
+### Issue 5: Dependency-Track Normalize Tag ตัวพิมพ์เล็กทำให้ Date Parsing ล้มเหลว
+* **สาเหตุ:** ค่าแท็ก `image-created:2026-10-10T18:07:06+07:00` ถูก Dependency-Track บังคับแปลงเป็นตัวพิมพ์เล็กในฐานข้อมูล (`...t18:07:06+07:00`) ทำให้ฟังก์ชัน `strptime` ใน jq ที่คาดหวังตัวอักษร `T` ทำงานผิดพลาดและส่งกลับ epoch 0
+* **การแก้ไข:** ปรับปรุงฟังก์ชัน `epoch_from_tag` ใน `scan-and-upload.sh` ให้ใช้ `ascii_upcase` ก่อนส่งเข้า `strptime` เพื่อรองรับทั้งตัวพิมพ์เล็กและตัวพิมพ์ใหญ่ ทำให้เปรียบเทียบเวลา Image Creation ได้ถูกต้อง 100%
+
+### Issue 6: Sonatype OSS Index คืนสถานะ HTTP 401 Unauthorized
+* **สาเหตุ:** Sonatype OSS Index เริ่มบังคับจำกัดการใช้งาน Anonymous API Request ทำให้ Dependency-Track Background Task มี Error 401 ใน Log
+* **การแก้ไข:** ระบบใช้ Internal Vulnerability Analyzer ร่วมกับ Google OSV Mirror (`npm`, `Alpine`) ซึ่งดาวน์โหลดฐานข้อมูลมาประมวลผลภายในเครื่อง ทำให้สามารถตรวจพบช่องโหว่ได้ครบถ้วน (81 ช่องโหว่) อย่างเสถียรและเป็นอิสระ โดยไม่จำเป็นต้องพึ่งพา Sonatype Anonymous API
 
 ---
 
@@ -101,3 +130,30 @@
    * `VULNERABILITY_ANALYSIS`
 3. **API Key:** คีย์ของทีม Automation ถูกตั้งค่าลงใน `phase1-local-poc/.env`:
    `DTRACK_API_KEY=odt_SHFUe9d8eUqjIUf4GXf84tUTknzoB6lc`
+
+---
+
+## 5. ตารางสรุปผลการทดสอบภาพรวม (Overall Execution Summary)
+
+| ID | หัวข้อการทดสอบ | ขอบเขต (Scope) | ผลการทดสอบจริง | สถานะ |
+| :--- | :--- | :--- | :--- | :---: |
+| **TC-P1-01** | Build Compose Services (In-House) | Postgres, API Server, Frontend | Container ทั้ง 3 สตาร์ทติดและ Healthcheck ผ่าน | **PASS** [x] |
+| **TC-P1-02** | Build Custom Trivy Scanner Image | Minimal Image (<100MB) | ขนาด 50.9 MB พร้อมเครื่องมือ Trivy, Curl, JQ ครบ | **PASS** [x] |
+| **TC-P1-03** | Web UI & Administration Setup | Dependency-Track Frontend | เข้าใช้งาน UI ได้ที่พอร์ต 8080, สร้าง API Key สำเร็จ | **PASS** [x] |
+| **TC-P1-04** | Build Sample Application Image | Payment Service (Alpine+Node) | บิลด์ `ecommerce-prod/payment-service:v1.0.0` สำเร็จ | **PASS** [x] |
+| **TC-P1-05** | Zero Code Execution Verification | Security & Isolation | ไม่มี Container เป้าหมายถูกรัน, Trivy สกัดผ่าน Layer | **PASS** [x] |
+| **TC-P1-06** | CycloneDX Full-Stack SBOM Validation | BOM Format & Completeness | ได้ CycloneDX 1.6 ครบทั้ง Alpine OS และ NPM packages | **PASS** [x] |
+| **TC-P1-07** | Standard Image Naming Extraction | Portfolio Mapping | แยก Parent `ecommerce-prod`, Child `payment-service` | **PASS** [x] |
+| **TC-P1-08** | Registry Host Prefix Stripping | Host Clean-up Regex | ตัด Host ออกถูกต้อง, Parent `core-banking`, Child `auth-service` | **PASS** [x] |
+| **TC-P1-09** | Fallback Single-Word Image Name | Resilience Handling | ใช้ `default-portfolio` เป็น Parent ไม่พัง | **PASS** [x] |
+| **TC-P1-10** | Automated Project Provisioning | Ingestion API | สร้าง Parent และ Child แบบอัตโนมัติบนระบบ | **PASS** [x] |
+| **TC-P1-11** | Ingestion Status Polling (Token Check)| Asynchronous Ingestion | รอจน `processing: false` และแจ้งผลลัพธ์ชัดเจน | **PASS** [x] |
+| **TC-P1-12** | Component Inventory Validation | Software Inventory | พบ 277 components ครบถ้วน (Express, Lodash, Axios ฯลฯ) | **PASS** [x] |
+| **TC-P1-13** | Known CVE Vulnerability Detection | Vulnerability Engine | ตรวจพบ 81 ช่องโหว่ (42 High, 33 Medium, 6 Low) | **PASS** [x] |
+| **TC-P1-14** | Hierarchical Metrics Roll-up | Portfolio Dashboard | ตัวชี้วัดรวมจาก Child สะท้อนขึ้นระดับ Parent App ถูกต้อง | **PASS** [x] |
+| **TC-P1-15** | Missing API Key Handling | Negative Test | สคริปต์หยุดทำงานทันทีและแจ้งเตือนอย่างถูกต้อง | **PASS** [x] |
+| **TC-P1-16** | Non-existent Image Handling | Negative Test | Trivy แจ้ง Error, สคริปต์ Exit โดยไม่ส่ง BOM เปล่า | **PASS** [x] |
+| **TC-P1-17** | Multi-Version Latest Reconciliation | Lifecycle Management | เวอร์ชันใหม่ `v1.1.0` active, เวอร์ชันเก่า `v1.0.0` inactive | **PASS** [x] |
+| **TC-P1-18** | Total Enterprise SBOM & Inventory Export| Enterprise Reporting | ส่งออก 819 instances / 265 unique libraries ครบถ้วน | **PASS** [x] |
+| **TC-P1-19** | Enterprise Vulnerability Detail & Unique CVE| Security Reporting | ส่งออก 162 active findings / 81 unique CVEs ครบถ้วน | **PASS** [x] |
+

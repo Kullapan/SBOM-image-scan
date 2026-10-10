@@ -85,6 +85,8 @@ echo "================================================================="
 # 5. Run Ephemeral Trivy Container
 # Mounts docker.sock for pure layer inspection (Zero code execution)
 # Note: --user 0 is used only in local PoC to read the host docker.sock
+IMAGE_CREATED=$(docker image inspect "$TARGET_IMAGE" --format '{{.Created}}' 2>/dev/null || date -u +"%Y-%m-%dT%H:%M:%SZ")
+
 docker run --rm \
     --user 0 \
     --network "$NETWORK_NAME" \
@@ -92,6 +94,7 @@ docker run --rm \
     -e DTRACK_URL="http://dtrack-apiserver:8080" \
     -e DTRACK_API_KEY="$DTRACK_API_KEY" \
     -e PARENT_VERSION="$PARENT_VERSION" \
+    -e IMAGE_CREATED="$IMAGE_CREATED" \
     "$SCANNER_IMAGE" \
     "$TARGET_IMAGE"
 
