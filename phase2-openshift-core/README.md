@@ -38,3 +38,26 @@ oc apply -f network-policy.yaml
 # ตรวจสอบ Route URL
 oc get route dependency-track -n secops-sbom
 ```
+
+## 5. การตั้งค่าหลังการติดตั้ง (Post-Deployment Setup)
+1. **เข้าสู่ระบบครั้งแรกผ่าน Route:**
+   * เปิด URL จาก `oc get route dependency-track -n secops-sbom` (เช่น `https://dependency-track-secops-sbom.apps.cluster.domain`)
+   * ล็อกอินด้วย Default credentials: `admin` / `admin`
+   * ระบบจะบังคับให้เปลี่ยนรหัสผ่านเป็นรหัสผ่านใหม่ที่ปลอดภัย (เช่น `Admin12345!`)
+2. **สร้าง Automation Team & API Key สำหรับ Phase 3:**
+   * ไปที่ **Administration -> Access Management -> Teams**
+   * กด **Create Team** ตั้งชื่อ `Automation`
+   * มอบสิทธิ์ (Permissions):
+     * `BOM_UPLOAD`
+     * `PROJECT_CREATION_UPLOAD`
+     * `PORTFOLIO_MANAGEMENT`
+     * `VIEW_PORTFOLIO`
+     * `VIEW_VULNERABILITY`
+     * `VULNERABILITY_ANALYSIS`
+   * กดสร้าง **API Key** แล้วคัดลอกคีย์มาสร้าง Secret สำหรับ Phase 3:
+     ```bash
+     oc create secret generic dtrack-automation-key \
+       --from-literal=API_KEY="<YOUR_COPIED_API_KEY>" \
+       -n secops-sbom
+     ```
+
