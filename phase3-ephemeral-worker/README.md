@@ -2,7 +2,7 @@
 
 > 📖 **คู่มือฉบับสมบูรณ์:** ดูรายละเอียดสถาปัตยกรรม, Scoped RBAC, และขั้นตอนทั้งหมดได้ที่ **[OpenShift Deployment & Operations Guide](../docs/openshift-guide.md)**
 
-ระบบสแกน SBOM ระดับ Production บน Red Hat OpenShift โดยใช้ **Ephemeral Kubernetes Job** ร่วมกับ Container Image `trivy-scanner` ที่ติดตั้ง `trivy` + `oc` CLI ในตัว
+ระบบสแกน SBOM ระดับ Production บน Red Hat OpenShift โดยใช้ **Ephemeral Kubernetes Job** ร่วมกับ Container Image `trivy-scanner` ที่ติดตั้ง `trivy` + `oc` CLI บนฐาน Red Hat UBI9
 
 ---
 
@@ -13,17 +13,26 @@
    * ปิดการยกระดับสิทธิ์ (`allowPrivilegeEscalation: false`)
    * ตัด Capabilities ทั้งหมด (`capabilities.drop: ["ALL"]`)
    * บังคับ Read-only Root Filesystem (`readOnlyRootFilesystem: true`) โดย Mount `emptyDir` ที่ `/tmp`
-2. **Scoped RBAC (Option 1 - ไม่ต้องใช้ ClusterRole):**
+2. **Least-Privilege Scoped RBAC (Namespaced Role - ไม่ต้องใช้ ClusterRole):**
    * Pod ผูกกับ ServiceAccount `sbom-scanner-sa` ใน `secops-sbom`
-   * ได้รับสิทธิ์เฉพาะใน Namespace ที่ Onboard ผ่าน Built-in Roles:
+   * ได้รับสิทธิ์เฉพาะใน Namespace ที่ Onboard ผ่าน:
      * `system:image-puller`: ดึง Image Layers จาก OpenShift Internal Registry (Port 5000)
-     * `view`: อ่าน Metadata ของ ImageStream เพื่อดึง Creation Timestamp และค้นหา Images
+     * `sbom-imagestream-reader` (Namespaced Role): อ่าน Metadata ของ ImageStream และดู Namespace โดย**ไม่มีสิทธิ์**อ่าน Pods, Secrets, ConfigMaps
 3. **Zero Code Execution:**
    * Trivy อ่านเฉพาะ File Layers ของ Image เท่านั้น ไม่มีการรัน Application Container เป้าหมาย
 
 ---
 
-## 🚀 ขั้นตอนการติดตั้งและทดสอบรัน Job บน OpenShift
+## 🧪 การทดสอบจำลองบนเครื่อง Local ก่อนขึ้นคลัสเตอร์
+สามารถทดสอบ Scanner Job เสมือนจริงภายใต้ Restricted SCC และ Mock `oc` CLI ได้ทันที:
+
+```powershell
+.\phase2-openshift-core\local-sim\test-local-sim.ps1
+```
+
+---
+
+## 🚀 ขั้นตอนการติดตั้งและทดสอบรัน Job บน OpenShift จริง
 
 ### 1. ติดตั้ง ServiceAccount ประจำระบบ SecOps
 ```bash
@@ -40,7 +49,6 @@ oc apply -f rbac/onboard-namespace-rbac.yaml -n ecommerce-prod
 # ตัวอย่าง: Onboard namespace core-banking
 oc apply -f rbac/onboard-namespace-rbac.yaml -n core-banking
 ```
-*(หรือใช้คำสั่ง CLI: `oc policy add-role-to-user system:image-puller system:serviceaccount:secops-sbom:sbom-scanner-sa -n ecommerce-prod` และ `oc policy add-role-to-user view system:serviceaccount:secops-sbom:sbom-scanner-sa -n ecommerce-prod`)*
 
 ### 3. สร้าง Secret สำหรับ Dependency-Track API Key
 ```bash
@@ -60,6 +68,7 @@ oc create secret generic dtrack-automation-key \
 ```
 * สคริปต์ใน Pod จะใช้ `oc get is` ดึง Creation Date จาก ImageStream `payment-service` ใน `ecommerce-prod`
 * ทำการ Ingest CycloneDX SBOM เข้า Dependency-Track และ Reconcile Version อัตโนมัติ จบใน 30–60 วินาที
+* คืนค่า Exit Code `0` หากผ่าน หรือ `1` หากล้มเหลว (เหมาะสำหรับ CI/CD Quality Gate)
 
 ### โหมดที่ 2: Scoped Auto-Discovery Mode (สำหรับ Weekly Audit / All-Projects Scan)
 สั่งสแกนทุก Image ในทุก Namespace ที่ ServiceAccount ได้รับสิทธิ์ โดยไม่ต้องพิมพ์ชื่อ Image:
@@ -70,3 +79,4 @@ oc create secret generic dtrack-automation-key \
 ```
 * สคริปต์ใน Pod จะรัน `oc get projects` ค้นหา Namespace ที่มีสิทธิ์ทั้งหมด (ข้าม namespace ระบบ เช่น `openshift-*`, `kube-*`)
 * วนลูปอ่าน ImageStream และสแกนครบทุกตัวในคลัสเตอร์อย่างปลอดภัย
+* สรุปรายการ Success / Failed และ Exit Code `1` หากมี Image ที่ล้มเหลว

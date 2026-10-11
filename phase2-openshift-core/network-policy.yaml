@@ -1,15 +1,134 @@
+# ==============================================================================
+# Network Policies for secops-sbom Namespace
+# Scoped per workload (Least Privilege):
+#   - Database cannot initiate egress to the internet
+#   - Frontend only talks to the API Server
+#   - Scanner only talks to API Server, Registry, and kube-apiserver (6443)
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. DNS Resolution (CoreDNS + OpenShift Node Resolver port 5353)
+# ------------------------------------------------------------------------------
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-internal-dtrack-traffic
+  name: allow-dns-egress
   namespace: secops-sbom
+  labels:
+    app.kubernetes.io/part-of: dependency-track
 spec:
   podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+        - protocol: UDP
+          port: 5353
+        - protocol: TCP
+          port: 5353
+---
+# ------------------------------------------------------------------------------
+# 2. PostgreSQL: Allow ingress ONLY from dtrack-apiserver; zero external egress
+# ------------------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-postgres
+  namespace: secops-sbom
+  labels:
+    app.kubernetes.io/part-of: dependency-track
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: postgres
   policyTypes:
     - Ingress
     - Egress
   ingress:
-    # Allow OpenShift Ingress Router to Frontend
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: dtrack-apiserver
+      ports:
+        - protocol: TCP
+          port: 5432
+  egress: [] # Postgres does not need to initiate any outbound connection
+---
+# ------------------------------------------------------------------------------
+# 3. Dependency-Track API Server
+#    - Ingress: from dtrack-frontend and sbom-scanner
+#    - Egress: to postgres, and corporate HTTP/HTTPS proxy
+# ------------------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dtrack-apiserver
+  namespace: secops-sbom
+  labels:
+    app.kubernetes.io/part-of: dependency-track
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: dtrack-apiserver
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: dtrack-frontend
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: sbom-scanner
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    # Intra-namespace: DB
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+    # Corporate Proxy / External Feeds (NVD, GitHub Advisories)
+    # Customize ports / ipBlock according to corporate network standards
+    - ports:
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 3128
+---
+# ------------------------------------------------------------------------------
+# 4. Dependency-Track Frontend
+#    - Ingress: from OpenShift Ingress Controller
+#    - Egress: to dtrack-apiserver only
+# ------------------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dtrack-frontend
+  namespace: secops-sbom
+  labels:
+    app.kubernetes.io/part-of: dependency-track
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: dtrack-frontend
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
     - from:
         - namespaceSelector:
             matchLabels:
@@ -17,22 +136,43 @@ spec:
       ports:
         - protocol: TCP
           port: 8080
-    # Allow intra-namespace traffic (Frontend -> API, API -> DB, Scanner -> API)
-    - from:
-        - podSelector: {}
   egress:
-    # Allow intra-namespace communication
     - to:
-        - podSelector: {}
-    # Allow DNS lookup (CoreDNS)
-    - to:
-        - namespaceSelector: {}
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: dtrack-apiserver
       ports:
-        - protocol: UDP
-          port: 53
         - protocol: TCP
-          port: 53
-    # Allow connection to OpenShift Internal Registry (Port 5000)
+          port: 8080
+---
+# ------------------------------------------------------------------------------
+# 5. Ephemeral Scanner Worker
+#    - Egress: to dtrack-apiserver (8080), Internal Registry (5000),
+#              and Kubernetes API Server (6443) for `oc` discovery
+# ------------------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-sbom-scanner
+  namespace: secops-sbom
+  labels:
+    app.kubernetes.io/part-of: dependency-track
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: sbom-scanner
+  policyTypes:
+    - Egress
+  egress:
+    # 5a. DTrack API
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: dtrack-apiserver
+      ports:
+        - protocol: TCP
+          port: 8080
+    # 5b. OpenShift Internal Registry (Port 5000)
     - to:
         - namespaceSelector:
             matchLabels:
@@ -40,12 +180,16 @@ spec:
       ports:
         - protocol: TCP
           port: 5000
-    # Allow API Server Egress to Corporate HTTP/HTTPS Proxy (e.g. 8080, 3128, 443)
+    # 5c. Kubernetes API Server (for `oc get is` and `oc get projects`)
+    - ports:
+        - protocol: TCP
+          port: 6443
+        - protocol: TCP
+          port: 443
+    # 5d. Corporate Proxy (for Trivy Java DB / mirror, if needed)
     - ports:
         - protocol: TCP
           port: 80
-        - protocol: TCP
-          port: 443
         - protocol: TCP
           port: 8080
         - protocol: TCP

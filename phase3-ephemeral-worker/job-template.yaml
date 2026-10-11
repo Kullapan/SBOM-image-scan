@@ -1,3 +1,10 @@
+# ==============================================================================
+# Ephemeral Trivy Scanner Job template
+# Rendered by test-job-run.sh with a RESTRICTED envsubst variable list:
+#   envsubst '${JOB_ID} ${TARGET_IMAGE} ${PARENT_VERSION} ${IMAGE_CREATED}'
+# NOTE: envsubst does NOT support ${VAR:-default}; defaults are applied in the
+#       calling script and in scan-openshift.sh.
+# ==============================================================================
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -6,13 +13,17 @@ metadata:
   labels:
     app.kubernetes.io/name: sbom-scanner
     app.kubernetes.io/component: ephemeral-worker
+    app.kubernetes.io/part-of: dependency-track
 spec:
   ttlSecondsAfterFinished: 600
   backoffLimit: 1
+  # Hard stop for runaway scans (ALL mode across many namespaces may need more)
+  activeDeadlineSeconds: 7200
   template:
     metadata:
       labels:
         app.kubernetes.io/name: sbom-scanner
+        app.kubernetes.io/component: ephemeral-worker
     spec:
       serviceAccountName: sbom-scanner-sa
       restartPolicy: Never
@@ -23,20 +34,25 @@ spec:
       containers:
         - name: trivy-scanner
           image: image-registry.openshift-image-registry.svc:5000/secops-sbom/trivy-scanner:latest
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities:
               drop:
                 - ALL
-          args:
-            - "${TARGET_IMAGE:-ALL}"
+          # Corporate proxy settings (HTTP_PROXY/HTTPS_PROXY/NO_PROXY + lowercase)
+          # are needed for Trivy Java DB downloads (ghcr.io) unless a mirror is used.
+          envFrom:
+            - configMapRef:
+                name: corporate-proxy-config
           env:
             - name: TARGET_IMAGE
-              value: "${TARGET_IMAGE:-ALL}"
+              value: "${TARGET_IMAGE}"
             - name: IMAGE_CREATED
-              value: "${IMAGE_CREATED:-}"
+              value: "${IMAGE_CREATED}"
+            - name: PARENT_VERSION
+              value: "${PARENT_VERSION}"
             - name: DTRACK_URL
               value: "http://dtrack-apiserver:8080"
             - name: DTRACK_API_KEY
@@ -44,22 +60,31 @@ spec:
                 secretKeyRef:
                   name: dtrack-automation-key
                   key: API_KEY
-            - name: PARENT_VERSION
-              value: "${PARENT_VERSION:-main}"
             - name: TRIVY_CACHE_DIR
               value: "/tmp/trivy-cache"
             - name: HOME
               value: "/tmp"
+            # Optional: internal mirror of the Trivy Java DB (air-gapped clusters)
+            # - name: TRIVY_JAVA_DB_REPOSITORY
+            #   value: "nexus.corp.local/aquasecurity/trivy-java-db:1"
+            # - name: TRIVY_SKIP_JAVA_DB_UPDATE
+            #   value: "true"
+            # Exclude EXTRA_JAVA_OPTIONS noise from the shared proxy ConfigMap
+            - name: EXTRA_JAVA_OPTIONS
+              value: ""
           resources:
             requests:
               cpu: "500m"
               memory: "512Mi"
+              ephemeral-storage: "2Gi"
             limits:
               cpu: "2000m"
               memory: "2Gi"
+              ephemeral-storage: "10Gi"
           volumeMounts:
             - name: tmp-volume
               mountPath: /tmp
       volumes:
         - name: tmp-volume
-          emptyDir: {}
+          emptyDir:
+            sizeLimit: 10Gi

@@ -3,7 +3,10 @@ kind: Namespace
 metadata:
   name: secops-sbom
   labels:
-    openshift.io/cluster-monitoring: "true"
+    # Pod Security Admission standards for OpenShift >= 4.12
+    # Workloads in this namespace must run unprivileged (non-root, no privilege escalation, dropped caps)
     pod-security.kubernetes.io/enforce: restricted
     pod-security.kubernetes.io/audit: restricted
     pod-security.kubernetes.io/warn: restricted
+    # Enable User Workload Monitoring (replaces invalid cluster-monitoring label)
+    openshift.io/user-monitoring: "true"

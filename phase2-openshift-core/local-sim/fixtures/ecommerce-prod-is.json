@@ -1,0 +1,35 @@
+{
+  "apiVersion": "image.openshift.io/v1",
+  "kind": "ImageStreamList",
+  "items": [
+    {
+      "metadata": {
+        "name": "payment-service",
+        "namespace": "ecommerce-prod"
+      },
+      "status": {
+        "dockerImageRepository": "custom-sample-payment-service",
+        "tags": [
+          {
+            "tag": "v1.0.0",
+            "items": [
+              {
+                "created": "2026-01-01T10:00:00Z",
+                "dockerImageReference": "custom-sample-payment-service:v1.0.0"
+              }
+            ]
+          },
+          {
+            "tag": "v1.1.0",
+            "items": [
+              {
+                "created": "2026-01-15T15:30:00Z",
+                "dockerImageReference": "custom-sample-payment-service:v1.1.0"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

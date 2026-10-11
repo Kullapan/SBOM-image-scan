@@ -1,0 +1,26 @@
+{
+  "apiVersion": "image.openshift.io/v1",
+  "kind": "ImageStreamList",
+  "items": [
+    {
+      "metadata": {
+        "name": "auth-service",
+        "namespace": "core-banking"
+      },
+      "status": {
+        "dockerImageRepository": "custom-sample-auth-service",
+        "tags": [
+          {
+            "tag": "v2.0.0",
+            "items": [
+              {
+                "created": "2026-01-20T08:00:00Z",
+                "dockerImageReference": "custom-sample-auth-service:v2.0.0"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

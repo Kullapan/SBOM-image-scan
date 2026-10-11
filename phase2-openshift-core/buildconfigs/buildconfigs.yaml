@@ -1,8 +1,27 @@
+# ==============================================================================
+# OpenShift BuildConfigs for SBOM Infrastructure Images
+#
+# Production Note:
+# 1. If GitLab is private, link a source secret via:
+#      source:
+#        sourceSecret:
+#          name: gitlab-repo-secret
+# 2. To pull base images from an internal registry (e.g. Nexus / Quay mirror),
+#    supply buildArgs in dockerStrategy:
+#      buildArgs:
+#        - name: BASE_IMAGE
+#          value: nexus.corp.local:8443/ubi9/ubi-minimal:latest
+# 3. Alternatively, build images via GitLab CI / Jenkins and push directly
+#    to OpenShift ImageStreams via `skopeo` or `podman push`.
+# ==============================================================================
 apiVersion: build.openshift.io/v1
 kind: BuildConfig
 metadata:
   name: bc-postgres-dtrack
   namespace: secops-sbom
+  labels:
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/part-of: dependency-track
 spec:
   source:
     type: Git
@@ -24,6 +43,9 @@ kind: BuildConfig
 metadata:
   name: bc-dtrack-apiserver
   namespace: secops-sbom
+  labels:
+    app.kubernetes.io/name: dtrack-apiserver
+    app.kubernetes.io/part-of: dependency-track
 spec:
   source:
     type: Git
@@ -45,6 +67,9 @@ kind: BuildConfig
 metadata:
   name: bc-dtrack-frontend
   namespace: secops-sbom
+  labels:
+    app.kubernetes.io/name: dtrack-frontend
+    app.kubernetes.io/part-of: dependency-track
 spec:
   source:
     type: Git
@@ -66,6 +91,9 @@ kind: BuildConfig
 metadata:
   name: bc-trivy-scanner
   namespace: secops-sbom
+  labels:
+    app.kubernetes.io/name: sbom-scanner
+    app.kubernetes.io/part-of: dependency-track
 spec:
   source:
     type: Git

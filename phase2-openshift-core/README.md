@@ -5,15 +5,33 @@
 ชุด Manifests สำหรับติดตั้งระบบบริหารจัดการ SBOM (Dependency-Track & PostgreSQL) บน Red Hat OpenShift:
 
 ## ส่วนประกอบ Manifests
-1. **`namespace.yaml`**: Namespace `secops-sbom` พร้อม Pod Security Admission ระดับ `restricted`
+1. **`namespace.yaml`**: Namespace `secops-sbom` พร้อม Pod Security Admission ระดับ `restricted` และ User Workload Monitoring
 2. **`imagestreams/` & `buildconfigs/`**: ImageStreams และ BuildConfigs สำหรับทั้ง 4 Images ภายในคลัสเตอร์
-3. **`postgres/`**: Dedicated PostgreSQL Deployment, Service, Secret, และ PVC ขนาด 100 GiB
-4. **`dtrack-api-all.yaml`**: Dependency-Track API Server Deployment, Service, และ PVC 50 GiB สำหรับ Index
-5. **`dtrack-frontend-all.yaml`**: Web UI Deployment (Nginx Non-root), Service, และ Route TLS
-6. **`configmap-proxy.yaml`**: คอนฟิก Corporate HTTP/HTTPS Proxy สำหรับการเชื่อมต่อไปยัง NVD feeds
-7. **`network-policy.yaml`**: NetworkPolicy จำกัด Ingress/Egress เฉพาะทราฟฟิกที่จำเป็น
+3. **`postgres/`**: Dedicated PostgreSQL Deployment (SCLOrg/RHEL-native), Service, Secret, และ PVC ขนาด 100 GiB
+4. **`dtrack-api-all.yaml`**: Dependency-Track API Server Deployment, Service, PVC 50 GiB และ StartupProbe (สูงสุด 10 นาที)
+5. **`dtrack-frontend-all.yaml`**: Web UI Deployment (Nginx Non-root, Read-only Rootfs), Service, และ Route TLS พร้อม Lazy DNS Resolution
+6. **`configmap-proxy.yaml`**: คอนฟิก Corporate HTTP/HTTPS Proxy (ทั้ง upper และ lowercase) สำหรับการเชื่อมต่อไปยัง NVD feeds
+7. **`network-policy.yaml`**: NetworkPolicy แยกราย Workload (Least Privilege) จำกัด DNS 53/5353, DB Ingress เฉพาะ API, Scanner Egress 6443/5000/8080
+8. **`local-sim/`**: ชุดเครื่องมือจำลอง OpenShift Restricted SCC บน Docker Local ก่อนขึ้นคลัสเตอร์จริง
 
-## ลำดับขั้นตอนการติดตั้งบน OpenShift
+---
+
+## 🧪 การทดสอบจำลองบนเครื่อง Local (Pre-Flight Test)
+หากยังไม่สามารถเข้าถึงคลัสเตอร์ OpenShift จริง สามารถจำลองสภาพแวดล้อมความปลอดภัย (Restricted SCC) บนเครื่อง Local ได้ด้วย Docker:
+
+```powershell
+# รันบน Windows PowerShell:
+.\phase2-openshift-core\local-sim\test-local-sim.ps1
+```
+
+```bash
+# รันบน Linux / macOS / WSL (Bash):
+./phase2-openshift-core/local-sim/test-local-sim.sh
+```
+
+---
+
+## ลำดับขั้นตอนการติดตั้งบน OpenShift จริง
 ```bash
 # 1. สร้าง Namespace
 oc apply -f namespace.yaml
@@ -62,4 +80,3 @@ oc get route dependency-track -n secops-sbom
        --from-literal=API_KEY="<YOUR_COPIED_API_KEY>" \
        -n secops-sbom
      ```
-

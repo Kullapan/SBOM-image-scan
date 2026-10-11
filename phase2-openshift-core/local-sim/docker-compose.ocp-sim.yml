@@ -1,0 +1,150 @@
+# ==============================================================================
+# OpenShift Restricted SCC Local Simulation
+#
+# Simulates OpenShift constraints on a local Docker engine:
+#   - Random non-root UID (1000680000) with root group (0)
+#   - Dropped capabilities: ALL
+#   - No new privileges (no-new-privileges: true)
+#   - Read-only root filesystem where enforced on OpenShift
+#   - Uses images/openshift/* (NOT images/local/*)
+#
+# Usage:
+#   docker compose -f docker-compose.ocp-sim.yml up -d postgres dtrack-apiserver dtrack-frontend
+#   # Once healthy, trigger scanner simulation:
+#   docker compose -f docker-compose.ocp-sim.yml run --rm trivy-scanner
+# ==============================================================================
+
+services:
+  postgres:
+    build:
+      context: ../../images/openshift/postgres
+    image: ocp-sim-postgres:latest
+    container_name: ocp-sim-postgres
+    restart: unless-stopped
+    # OpenShift runs PostgreSQL as an arbitrary UID from the namespace range with GID 0
+    user: "1000680000:0"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      POSTGRESQL_USER: ${POSTGRES_USER:-dtrack}
+      POSTGRESQL_PASSWORD: ${POSTGRES_PASSWORD:-dtrackpassword}
+      POSTGRESQL_DATABASE: ${POSTGRES_DB:-dtrack}
+    volumes:
+      - ocp-postgres-data:/var/lib/pgsql/data:rw
+    networks:
+      - ocp-sim-net
+    healthcheck:
+      test: ["CMD", "/usr/libexec/check-container"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  dtrack-apiserver:
+    build:
+      context: ../../images/openshift/dtrack-apiserver
+    image: ocp-sim-dtrack-apiserver:latest
+    container_name: ocp-sim-dtrack-apiserver
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    user: "1000680000:0"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "${DTRACK_API_PORT:-18081}:8080"
+    environment:
+      ALPINE_DATABASE_MODE: external
+      ALPINE_DATABASE_DRIVER: org.postgresql.Driver
+      ALPINE_DATABASE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-dtrack}
+      ALPINE_DATABASE_USERNAME: ${POSTGRES_USER:-dtrack}
+      ALPINE_DATABASE_PASSWORD: ${POSTGRES_PASSWORD:-dtrackpassword}
+      ALPINE_DATA_DIRECTORY: /data
+      EXTRA_JAVA_OPTIONS: ""
+    volumes:
+      - ocp-dtrack-data:/data:rw
+      - ocp-tmp-data:/tmp:rw
+    networks:
+      - ocp-sim-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8080/health/live || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 40s
+
+  dtrack-frontend:
+    build:
+      context: ../../images/openshift/dtrack-frontend
+    image: ocp-sim-dtrack-frontend:latest
+    container_name: ocp-sim-dtrack-frontend
+    restart: unless-stopped
+    depends_on:
+      - dtrack-apiserver
+    user: "1000680000:0"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+      - /var/cache/nginx:rw,noexec,nosuid,size=64m,mode=1777
+      - /var/log/nginx:rw,noexec,nosuid,size=64m,mode=1777
+    ports:
+      - "${DTRACK_FRONTEND_PORT:-18080}:8080"
+    environment:
+      API_BASE_URL: ""
+    networks:
+      - ocp-sim-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8080/healthz || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Ephemeral Scanner Worker Simulation (corresponds to Phase 3 Job)
+  trivy-scanner:
+    build:
+      context: ../../images/openshift/trivy-scanner
+    image: ocp-sim-trivy-scanner:latest
+    container_name: ocp-sim-trivy-scanner
+    user: "1000680000:0"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,size=1024m
+    environment:
+      TARGET_IMAGE: ${TARGET_IMAGE:-ALL}
+      PARENT_VERSION: ${PARENT_VERSION:-main}
+      DTRACK_URL: http://dtrack-apiserver:8080
+      DTRACK_API_KEY: ${DTRACK_API_KEY:-}
+      MOCK_FIXTURES_DIR: /fixtures
+      TRIVY_CACHE_DIR: /tmp/trivy-cache
+      HOME: /tmp
+    volumes:
+      # Inject mock oc CLI and fixtures to simulate cluster API
+      - ./mock-oc.sh:/usr/local/bin/oc:ro
+      - ./fixtures:/fixtures:ro
+      # Docker socket to scan locally-built sample images
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - ocp-sim-net
+    profiles:
+      - manual
+
+networks:
+  ocp-sim-net:
+    name: ocp-sim-net
+
+volumes:
+  ocp-postgres-data:
+  ocp-dtrack-data:
+  ocp-tmp-data:

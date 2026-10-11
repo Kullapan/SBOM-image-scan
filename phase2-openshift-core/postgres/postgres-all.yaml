@@ -3,6 +3,9 @@ kind: PersistentVolumeClaim
 metadata:
   name: postgres-data-pvc
   namespace: secops-sbom
+  labels:
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/part-of: dependency-track
 spec:
   accessModes:
     - ReadWriteOnce
@@ -10,13 +13,30 @@ spec:
     requests:
       storage: 100Gi
 ---
+# ==============================================================================
+# PostgreSQL Credentials Secret
+# NOTE: In production, generate this secret out-of-band:
+#   oc create secret generic postgres-auth \
+#     --from-literal=POSTGRESQL_DATABASE=dtrack \
+#     --from-literal=POSTGRESQL_USER=dtrack \
+#     --from-literal=POSTGRESQL_PASSWORD="$(openssl rand -base64 24)" \
+#     -n secops-sbom
+# Both POSTGRES_* and POSTGRESQL_* keys are provided for backwards compatibility.
+# ==============================================================================
 apiVersion: v1
 kind: Secret
 metadata:
   name: postgres-auth
   namespace: secops-sbom
+  labels:
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/part-of: dependency-track
 type: Opaque
 stringData:
+  POSTGRESQL_DATABASE: "dtrack"
+  POSTGRESQL_USER: "dtrack"
+  POSTGRESQL_PASSWORD: "CHANGE_ME_SECURE_PASSWORD"
+  # Backwards-compatibility aliases for Dependency-Track API Server
   POSTGRES_DB: "dtrack"
   POSTGRES_USER: "dtrack"
   POSTGRES_PASSWORD: "CHANGE_ME_SECURE_PASSWORD"
@@ -29,6 +49,10 @@ metadata:
   labels:
     app.kubernetes.io/name: postgres
     app.kubernetes.io/part-of: dependency-track
+  annotations:
+    # Redeploy automatically when the ImageStreamTag is updated
+    image.openshift.io/triggers: >-
+      [{"from":{"kind":"ImageStreamTag","name":"postgres-dtrack:latest"},"fieldPath":"spec.template.spec.containers[?(@.name==\"postgres\")].image"}]
 spec:
   replicas: 1
   strategy:
@@ -40,7 +64,9 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: postgres
+        app.kubernetes.io/part-of: dependency-track
     spec:
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
         seccompProfile:
@@ -55,9 +81,22 @@ spec:
             capabilities:
               drop:
                 - ALL
-          envFrom:
-            - secretRef:
-                name: postgres-auth
+          env:
+            - name: POSTGRESQL_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-auth
+                  key: POSTGRESQL_USER
+            - name: POSTGRESQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-auth
+                  key: POSTGRESQL_PASSWORD
+            - name: POSTGRESQL_DATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-auth
+                  key: POSTGRESQL_DATABASE
           ports:
             - name: postgresql
               containerPort: 5432
@@ -70,18 +109,20 @@ spec:
               memory: "4Gi"
           volumeMounts:
             - name: postgres-storage
-              mountPath: /var/lib/postgresql/data
-              subPath: data
+              mountPath: /var/lib/pgsql/data
+              subPath: userdata
           readinessProbe:
             exec:
-              command: ["pg_isready", "-U", "dtrack", "-d", "dtrack"]
+              command: ["/usr/libexec/check-container"]
             initialDelaySeconds: 10
             periodSeconds: 10
+            timeoutSeconds: 5
           livenessProbe:
             exec:
-              command: ["pg_isready", "-U", "dtrack", "-d", "dtrack"]
+              command: ["/usr/libexec/check-container"]
             initialDelaySeconds: 30
             periodSeconds: 15
+            timeoutSeconds: 5
       volumes:
         - name: postgres-storage
           persistentVolumeClaim:
@@ -94,6 +135,7 @@ metadata:
   namespace: secops-sbom
   labels:
     app.kubernetes.io/name: postgres
+    app.kubernetes.io/part-of: dependency-track
 spec:
   type: ClusterIP
   ports:

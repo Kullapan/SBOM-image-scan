@@ -3,6 +3,9 @@ kind: PersistentVolumeClaim
 metadata:
   name: dtrack-data-pvc
   namespace: secops-sbom
+  labels:
+    app.kubernetes.io/name: dtrack-apiserver
+    app.kubernetes.io/part-of: dependency-track
 spec:
   accessModes:
     - ReadWriteOnce
@@ -18,6 +21,9 @@ metadata:
   labels:
     app.kubernetes.io/name: dtrack-apiserver
     app.kubernetes.io/part-of: dependency-track
+  annotations:
+    image.openshift.io/triggers: >-
+      [{"from":{"kind":"ImageStreamTag","name":"dtrack-apiserver:latest"},"fieldPath":"spec.template.spec.containers[?(@.name==\"dtrack-apiserver\")].image"}]
 spec:
   replicas: 1
   strategy:
@@ -29,7 +35,9 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: dtrack-apiserver
+        app.kubernetes.io/part-of: dependency-track
     spec:
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
         seccompProfile:
@@ -61,6 +69,10 @@ spec:
                 secretKeyRef:
                   name: postgres-auth
                   key: POSTGRES_PASSWORD
+            # Explicitly anchor data directory so arbitrary UIDs write indexes to /data
+            - name: ALPINE_DATA_DIRECTORY
+              value: "/data"
+            # Proxy Configuration (ConfigMap corporate-proxy-config)
             - name: EXTRA_JAVA_OPTIONS
               valueFrom:
                 configMapKeyRef:
@@ -81,6 +93,24 @@ spec:
                 configMapKeyRef:
                   name: corporate-proxy-config
                   key: NO_PROXY
+            - name: ALPINE_HTTP_PROXY_ADDRESS
+              valueFrom:
+                configMapKeyRef:
+                  name: corporate-proxy-config
+                  key: ALPINE_HTTP_PROXY_ADDRESS
+                  optional: true
+            - name: ALPINE_HTTP_PROXY_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: corporate-proxy-config
+                  key: ALPINE_HTTP_PROXY_PORT
+                  optional: true
+            - name: ALPINE_NO_PROXY
+              valueFrom:
+                configMapKeyRef:
+                  name: corporate-proxy-config
+                  key: ALPINE_NO_PROXY
+                  optional: true
           ports:
             - name: api
               containerPort: 8080
@@ -96,18 +126,32 @@ spec:
               mountPath: /data
             - name: tmp-dir
               mountPath: /tmp
+          # Startup probe allows up to 10 minutes on first boot for DB migration
+          # and initial NVD data seed without tripping the liveness probe.
+          startupProbe:
+            httpGet:
+              path: /health/live
+              port: 8080
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            failureThreshold: 60
+            timeoutSeconds: 5
           readinessProbe:
             httpGet:
-              path: /api/version
+              path: /health/ready
               port: 8080
-            initialDelaySeconds: 30
+            initialDelaySeconds: 10
             periodSeconds: 10
+            failureThreshold: 3
+            timeoutSeconds: 5
           livenessProbe:
             httpGet:
-              path: /api/version
+              path: /health/live
               port: 8080
-            initialDelaySeconds: 60
+            initialDelaySeconds: 10
             periodSeconds: 20
+            failureThreshold: 3
+            timeoutSeconds: 5
       volumes:
         - name: dtrack-storage
           persistentVolumeClaim:
@@ -122,6 +166,7 @@ metadata:
   namespace: secops-sbom
   labels:
     app.kubernetes.io/name: dtrack-apiserver
+    app.kubernetes.io/part-of: dependency-track
 spec:
   type: ClusterIP
   ports:

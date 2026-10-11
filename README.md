@@ -63,6 +63,13 @@
 
 📖 **คู่มือฉบับเต็ม:** ดูรายละเอียดขั้นตอนการติดตั้ง, นโยบาย Scoped RBAC, และการเชื่อมต่อ CI/CD Pipeline ได้ที่ **[OpenShift Deployment & Operations Guide](docs/openshift-guide.md)**
 
+### จุดเด่นด้านสถาปัตยกรรมและความปลอดภัย:
+* **Enterprise Base Images (ฟรี 100% ไม่มีค่า License):**
+  * Trivy Scanner: พัฒนาบน **Red Hat UBI 9 Minimal** (ฟรีตาม Red Hat UBI EULA, ซัพพอร์ตยาวนานถึงปี 2032)
+  * PostgreSQL: พัฒนาบน **SCLorg PostgreSQL 15** (ฟรี Open Source โดยทีม Red Hat Container)
+* **Scoped RBAC (Zero ClusterRole):** ใช้เพียง `Role` และ `RoleBinding` ระดับ Project/Namespace เท่านั้น ผู้ดูแลโปรเจกต์ Onboard ได้เองโดยไม่ต้องพึ่งสิทธิ์ Cluster Admin
+* **Local Simulation Suite (ทดสอบเสมือนจริงบน Local):** มีชุดจำลอง OpenShift Restricted SCC บน Docker ให้ทดสอบล่วงหน้าได้ทันที
+
 ### สรุปคำสั่งสำคัญบน OpenShift:
 ```bash
 # 1. ติดตั้ง Core Stack (Namespace, Postgres, API Server, Frontend TLS Route)
@@ -75,7 +82,7 @@ oc apply -f phase2-openshift-core/dtrack-api-all.yaml
 oc apply -f phase2-openshift-core/dtrack-frontend-all.yaml
 oc apply -f phase2-openshift-core/network-policy.yaml
 
-# 2. Onboard Namespace แอปพลิเคชัน (Option 1 Scoped RBAC - ไม่ต้องใช้ ClusterRole)
+# 2. Onboard Namespace แอปพลิเคชัน (Scoped RBAC - ไม่ต้องใช้ ClusterRole)
 oc apply -f phase3-ephemeral-worker/rbac/onboard-namespace-rbac.yaml -n <APPLICATION_NAMESPACE>
 
 # 3. สั่งสแกน Ephemeral Worker Job (จบใน Pod เดียวบน OpenShift)
@@ -84,6 +91,15 @@ oc apply -f phase3-ephemeral-worker/rbac/onboard-namespace-rbac.yaml -n <APPLICA
 
 # โหมดที่ 2: Scoped Auto-Discovery (สแกนทุก ImageStream ในทุก Namespace ที่มีสิทธิ์)
 ./phase3-ephemeral-worker/test-job-run.sh ALL
+```
+
+### 🧪 การทดสอบจำลองบน Local (ก่อนขึ้น OpenShift จริง):
+```powershell
+# บน Windows PowerShell:
+.\phase2-openshift-core\local-sim\test-local-sim.ps1
+
+# บน Linux / macOS / WSL:
+./phase2-openshift-core\local-sim\test-local-sim.sh
 ```
 
 ---

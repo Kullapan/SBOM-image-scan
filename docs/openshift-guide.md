@@ -23,7 +23,7 @@ flowchart TD
             
             Frontend["Deployment: dtrack-frontend<br>• Nginx Non-root (Port 8080)<br>• Single-Route Reverse Proxy /api"]
             
-            APIServer["Deployment: dtrack-apiserver<br>• Java 21 / D-Track 4.11.7<br>• JVM G1GC 75% MaxRAM<br>• Corporate Proxy Support"]
+            APIServer["Deployment: dtrack-apiserver<br>• Java 21 / D-Track 4.11.7<br>• Parallel GC (MaxRAM 75%)<br>• Corporate Proxy Support"]
             
             DB["Deployment: postgres<br>• Hardened PostgreSQL 15<br>• OpenShift GID 0 Compliant"]
             
@@ -38,13 +38,19 @@ flowchart TD
         subgraph Target_Namespace1["Application Namespace: ecommerce-prod"]
             IS1["ImageStream: payment-service<br>Tags: v1.0.0, v1.1.0"]
             REG1["OpenShift Internal Registry<br>(image-registry...svc:5000)"]
-            RB1["RoleBinding:<br>• system:image-puller<br>• view"]
+            ScannerPod["Ephemeral Job Pod: trivy-scanner<br>• trivy (CycloneDX v1.6)<br>• oc CLI (In-Cluster)<br>• ServiceAccount: sbom-scanner-sa"]
+        end
+
+        subgraph Target_Namespace1["Application Namespace: ecommerce-prod"]
+            IS1["ImageStream: payment-service<br>Tags: v1.0.0, v1.1.0"]
+            REG1["OpenShift Internal Registry<br>(image-registry...svc:5000)"]
+            RB1["RoleBinding:<br>• system:image-puller<br>• sbom-imagestream-reader"]
         end
 
         subgraph Target_Namespace2["Application Namespace: core-banking"]
             IS2["ImageStream: auth-service<br>Tags: v2.0.0"]
             REG2["OpenShift Internal Registry<br>(image-registry...svc:5000)"]
-            RB2["RoleBinding:<br>• system:image-puller<br>• view"]
+            RB2["RoleBinding:<br>• system:image-puller<br>• sbom-imagestream-reader"]
         end
 
         Router --> Route
@@ -67,12 +73,12 @@ flowchart TD
 
 ไฟล์ Dockerfile และ Assets ทั้งหมดสำหรับ OpenShift ถูกจัดเก็บแยกเป็นอิสระไว้ที่ [`images/openshift/`](file:///c:/KK/Workspace/SBOM-image-scan/images/openshift):
 
-| โฟลเดอร์ Image | ฐานระบบ (Base) | คุณสมบัติเฉพาะทางสำหรับ OpenShift |
-| :--- | :--- | :--- |
-| **`postgres/`** | `postgres:15-alpine` | • ปรับแต่งสิทธิ์ Root Group (GID 0) รองรับ Arbitrary Non-root UID ของ OpenShift<br>• ตั้งค่า `ENV PGDATA=/var/lib/postgresql/data/pgdata` เพื่อความปลอดภัยบน PVC subPath |
-| **`dtrack-apiserver/`** | `dependencytrack/apiserver:4.11.7` | • ปรับแต่งสิทธิ์ GID 0 สำหรับโฟลเดอร์ `/data` และ `/tmp`<br>• รองรับ Java Options ผ่าน ConfigMap และ Corporate Proxy |
-| **`dtrack-frontend/`** | `dependencytrack/frontend:4.11.7` | • รันด้วย Non-root UID `10001`<br>• ปรับแต่ง `nginx.conf` เพิ่มบล็อก **Reverse Proxy `/api`** ชี้เข้าหา API Server ภายในคลัสเตอร์ ทำให้ใช้ **Single-Route Architecture** ได้สมบูรณ์แบบโดยไม่ต้องเปิด Route แยกและไม่ติด CORS |
-| **`trivy-scanner/`** | `alpine:3.19` (Multi-stage) | • คัดลอกไบนารี `trivy:0.59.1` และ **`oc` CLI** จาก `origin-cli:4.14`<br>• ติดตั้ง `gcompat` ให้ไบนารี glibc รันบน Alpine ได้<br>• ใช้ Entrypoint [`scan-openshift.sh`](file:///c:/KK/Workspace/SBOM-image-scan/images/openshift/trivy-scanner/scan-openshift.sh) ที่รองรับ In-Cluster Token, ImageStream Date, และ 2 โหมดการสแกน |
+| โฟลเดอร์ Image | ฐานระบบ (Base) | คุณสมบัติเฉพาะทางสำหรับ OpenShift | สิทธิ์การใช้งาน (License) & Roadmap |
+| :--- | :--- | :--- | :--- |
+| **`postgres/`** | `quay.io/sclorg/postgresql-15-c9s` (หรือ `registry.redhat.io/rhel9/postgresql-15`) | • ออกแบบสำหรับ OpenShift Arbitrary UID / Group 0 โดยเฉพาะ มี `nss_wrapper` ในตัว<br>• มี Container Health Check ในตัว (`/usr/libexec/check-container`)<br>• รองรับไฟล์ปรับแต่งผ่าน `/opt/app-root/src/postgresql-cfg/*.conf` และ init SQL ผ่าน `postgresql-init/` | **ฟรี 100% (Open Source - Apache 2.0 / BSD)**<br>• ดูแลโดยทีม Red Hat Software Collections (SCLorg)<br>• รองรับ PG15 ถึงปลายปี 2027<br>• หากมี OpenShift Subscription สามารถสลับไปใช้ `registry.redhat.io/rhel9/postgresql-15` ได้ทันที |
+| **`dtrack-apiserver/`** | `dependencytrack/apiserver:4.11.7` | • ปรับแต่งสิทธิ์ GID 0 สำหรับโฟลเดอร์ `/data` และ `/tmp`<br>• ตั้งค่า `ALPINE_DATA_DIRECTORY=/data` รองรับ Arbitrary Non-root UID<br>• ใช้ Parallel GC ของ Base Image หลีกเลี่ยง GC Flag Conflict<br>• เพิ่ม `startupProbe` สูงสุด 10 นาทีเพื่อรองรับ DB Migration รอบแรกอย่างปลอดภัย | **ฟรี 100% (Apache 2.0)**<br>• OWASP Dependency-Track Official Image<br>• โปรเจกต์หลักระดับ Flagship ของ OWASP |
+| **`dtrack-frontend/`** | `dependencytrack/frontend:4.11.7` | • รันด้วย Non-root UID `10001` และรองรับ `readOnlyRootFilesystem: true`<br>• `nginx.conf` ใช้ **Lazy DNS Resolver** ป้องกัน Nginx Crash Loop หาก API Server ยังไม่พร้อม<br>• Reverse Proxy `/api/` ภายในคลัสเตอร์ ทำให้ใช้ **Single-Route Architecture** ได้โดยไม่ติด CORS | **ฟรี 100% (Apache 2.0)**<br>• OWASP Dependency-Track Official Image |
+| **`trivy-scanner/`** | `registry.access.redhat.com/ubi9/ubi-minimal` | • คัดลอกไบนารี `trivy:0.59.1` และ `oc` CLI จาก `origin-cli:4.14` รันบน glibc Native อย่างปลอดภัย<br>• มี Build-time Smoke Test ตรวจสอบความเข้ากันได้ของไบนารีทั้งหมดตั้งแต่ขั้นตอน Build<br>• Entrypoint [`scan-openshift.sh`](file:///c:/KK/Workspace/SBOM-image-scan/images/openshift/trivy-scanner/scan-openshift.sh) รองรับ Service CA Bundle, In-Cluster Token, และ Reconcile ข้าม Namespace อย่างแม่นยำ | **ฟรี 100% (Red Hat UBI EULA)**<br>• ไม่ต้องมี Red Hat Subscription ไม่เสียค่าใช้จ่าย<br>• ใช้งานและแจกจ่ายต่อได้ทั้งเชิงพาณิชย์และทั่วไป<br>• **Enterprise Lifecycle ถึงปี 2032 (RHEL 9)** ได้รับการแพตช์ CVE อย่างต่อเนื่อง |
 
 ---
 
@@ -154,27 +160,46 @@ oc apply -f phase2-openshift-core/network-policy.yaml
 
 > [!IMPORTANT]
 > **ระบบนี้ไม่จำเป็นต้องใช้สิทธิ์ Cluster Admin และไม่สร้าง ClusterRole ใดๆ ทั้งสิ้น**
-> ผู้ดูแลของแต่ละ Namespace แอปพลิเคชัน (Project Admin) สามารถอนุมัติให้ระบบ SecOps เข้าไปสแกนได้ด้วยสิทธิ์ของตนเอง
+> สิทธิ์ทั้งหมดถูกจำกัดขอบเขตในระดับ **Project (Namespace-scoped)** 100% ผู้ดูแลของแต่ละ Namespace แอปพลิเคชัน (Project Admin) สามารถอนุมัติหรือยกเลิกการเข้าถึงได้ด้วยตนเองอย่างอิสระ
 
-### สิทธิ์ที่ใช้ (Built-in ของ OpenShift):
-* **`system:image-puller`**: อนุญาตให้ Pod ของ SecOps ดึง Layer ของ Image จาก Internal Registry ประจำ Namespace นั้น
-* **`view`**: อนุญาตให้อ่าน Metadata ของ ImageStream เพื่อดึง Creation Timestamp และค้นหารายชื่อ Image
+### โครงสร้าง RBAC ภายใน Namespace แอปพลิเคชัน:
+```mermaid
+flowchart TD
+    subgraph TargetAppNamespace ["Application Namespace (เช่น ecommerce-prod)"]
+        direction TB
+        R["Role: sbom-imagestream-reader<br/>• get, list imagestreams<br/>• get namespace"]
+        RB1["RoleBinding: sbom-scanner-imagestream-reader"]
+        RB2["RoleBinding: sbom-scanner-image-puller"]
+        Builtin["Built-in ClusterRole: system:image-puller<br/>(มีใน OpenShift ทุกคลัสเตอร์)"]
+        
+        RB1 -->|ผูกกับ Role เฉพาะ namespace| R
+        RB2 -->|ผูก RoleBinding ใน namespace| Builtin
+    end
+
+    SA["ServiceAccount: sbom-scanner-sa<br/>(อยู่ใน secops-sbom)"]
+    SA -->|อ่าน ImageStream เฉพาะ namespace นี้| RB1
+    SA -->|Pull Layer เฉพาะ namespace นี้| RB2
+```
+
+### สิทธิ์ที่ใช้ใน [`onboard-namespace-rbac.yaml`](../phase3-ephemeral-worker/rbac/onboard-namespace-rbac.yaml):
+1. **`sbom-imagestream-reader` (Namespaced `Role`):**
+   * เป็น **`Role` ระดับโปรเจกต์ (ไม่ใช่ ClusterRole)** สร้างขึ้นใน Application Namespace นั้นๆ เท่านั้น
+   * ให้สิทธิ์เฉพาะการอ่าน Metadata ของ ImageStream และดู Namespace ตัวเอง เพื่อค้นหาประวัติและวันเวลาสร้างอิมเมจ
+   * **ปลอดภัยขั้นสูงสุด:** ไม่อนุญาตให้อ่าน Pods, Secrets, ConfigMaps, หรือ Events ใดๆ ของแอปพลิเคชัน
+2. **`system:image-puller` (Built-in OpenShift ClusterRole ผูกด้วย `RoleBinding`):**
+   * ใช้ **`kind: RoleBinding`** (ไม่ใช่ `ClusterRoleBinding`)
+   * **ผลลัพธ์:** สิทธิ์ในการดึง Layer อิมเมจจึงถูก **Scoped กักบริเวณให้อยู่เฉพาะภายใน Namespace นั้นเท่านั้น** สแกนเนอร์ไม่สามารถดึงอิมเมจของ Namespace อื่นที่ยังไม่ได้ onboard ได้
 
 ### วิธีการ Onboard Namespace แอปพลิเคชันใหม่:
 เมื่อมี Namespace แอปพลิเคชันต้องการเข้าร่วมระบบ SBOM (เช่น `ecommerce-prod`):
 
-**วิธีที่ 1: ใช้ Manifest Template**
 ```bash
+# ใช้สิทธิ์ Project Admin ของ Namespace นั้นๆ สั่ง Apply
 oc apply -f phase3-ephemeral-worker/rbac/onboard-namespace-rbac.yaml -n ecommerce-prod
 ```
 
-**วิธีที่ 2: ใช้คำสั่ง OpenShift CLI**
-```bash
-oc policy add-role-to-user system:image-puller system:serviceaccount:secops-sbom:sbom-scanner-sa -n ecommerce-prod
-oc policy add-role-to-user view system:serviceaccount:secops-sbom:sbom-scanner-sa -n ecommerce-prod
-```
-
 * **การแยกแยะความปลอดภัย:** หาก Namespace ใดไม่ได้รันคำสั่งนี้ ตัว Scanner Pod จะไม่มีสิทธิ์เข้าถึงหรือมองเห็น Image ใดๆ ของ Namespace นั้นเลย 100%
+* **การ Offboard:** เมื่อไม่ต้องการให้สแกนอีกต่อไป ให้สั่ง `oc delete -f phase3-ephemeral-worker/rbac/onboard-namespace-rbac.yaml -n ecommerce-prod` สิทธิ์จะถูกถอนออกทันทีโดยไม่กระทบระบบอื่น
 
 ---
 
@@ -269,10 +294,37 @@ python scripts/export-vulnerability-report.py
 | **TC-OCP-01** | Pod Security Admission | `namespace.yaml` | ติดตั้งบน Restricted PSA ผ่านฉลาก `pod-security.kubernetes.io/enforce: restricted` |
 | **TC-OCP-02** | In-Cluster Image Builds | `buildconfigs.yaml` | Image ทั้ง 4 ตัวบิลด์ผ่าน `images/openshift/` เข้า ImageStreams สำเร็จ |
 | **TC-OCP-03** | PostgreSQL Persistence | `postgres-all.yaml` | รันด้วย Non-root, GID 0, Mount PVC 100Gi subPath ผ่าน และ Probe เป็น Healthy |
-| **TC-OCP-04** | API Server Health & JVM | `dtrack-api-all.yaml` | API Server สตาร์ทติดพร้อม JVM G1GC 75% MaxRAM, Lucene PVC 50Gi พร้อมใช้งาน |
+| **TC-OCP-04** | API Server Health & JVM | `dtrack-api-all.yaml` | API Server สตาร์ทติดพร้อม JVM Parallel GC (MaxRAM 75%), Lucene PVC 50Gi พร้อมใช้งาน |
 | **TC-OCP-05** | Single-Route & CORS Prevention | `dtrack-frontend-all.yaml` | เข้าหน้าเว็บผ่าน HTTPS Route เดียว ใช้งาน Web UI ได้ลื่นไหล ไม่ติดปัญหา CORS |
 | **TC-OCP-06** | Zero-Trust NetworkPolicy | `network-policy.yaml` | บล็อกทราฟฟิกแปลกปลอม อนุญาตเฉพาะ Router, Internal Services, DNS, และ Proxy |
 | **TC-OCP-07** | Scoped RBAC (Option 1) | `onboard-namespace-rbac.yaml` | ServiceAccount มีสิทธิ์เฉพาะ Namespace ที่ Onboard, Namespace อื่นถูกปฏิเสธ |
 | **TC-OCP-08** | In-Pod oc CLI Image Date | `scan-openshift.sh` | Pod ดึง Create Date จาก ImageStream สำเร็จ และส่ง Tag ISO-8601 UTC+7 เข้า D-Track |
 | **TC-OCP-09** | Pipeline Targeted Scan | `test-job-run.sh <image>` | สแกน Image ตัวเดียวจบใน Job เดียวภายใน 60 วินาที พร้อม Reconcile Version |
 | **TC-OCP-10** | Scoped Auto-Discovery Scan | `test-job-run.sh ALL` | ค้นหาและวนลูปสแกน ImageStream ทุกตัวใน Namespace ที่อนุญาตได้อัตโนมัติ 100% |
+
+---
+
+## 8. การทดสอบก่อนขึ้นคลัสเตอร์จริง (Local Simulation & Pre-Flight Testing)
+
+ในกรณีที่ยังไม่สามารถเข้าถึงคลัสเตอร์ OpenShift จริง หรือต้องการตรวจสอบความถูกต้องของ Manifests และ Container Images ก่อน สามารถรันการทดสอบจำลอง **OpenShift Restricted SCC** บนเครื่อง Local ด้วย Docker:
+
+```powershell
+# รันบน Windows PowerShell:
+.\phase2-openshift-core\local-sim\test-local-sim.ps1
+```
+
+```bash
+# รันบน Linux / macOS / WSL (Bash):
+./phase2-openshift-core/local-sim/test-local-sim.sh
+```
+
+### สิ่งที่ระบบจำลองนี้ทดสอบแบบครบวงจร:
+1. **Arbitrary Non-root UID (`1000680000:0`) & Dropped Capabilities:** ตรวจสอบว่า PostgreSQL (SCLOrg), DTrack API, DTrack Frontend, และ Trivy Scanner รันได้จริงภายใต้สิทธิ์เดียวกับ OpenShift Restricted SCC
+2. **Read-only Root Filesystem:** ตรวจสอบ Nginx Frontend และ Trivy Job ว่าทำงานได้ภายใต้ `--read-only` ร่วมกับ Tmpfs/EmptyDir
+3. **Lazy DNS Resolution ใน Nginx:** ตรวจสอบว่า Frontend สตาร์ทติดโดยไม่เกิด Crash Loop เมื่อ API Server ยังไม่พร้อม
+4. **Scanner Auto-Discovery & Reconcile:** ใช้ Mock `oc` CLI และ Fixtures จำลองการดึง ImageStream ข้าม Namespace และตรวจสอบการ Reconcile Version ใน Dependency-Track อัตโนมัติ
+5. **ทำความสะอาด Environment หลังทดสอบ:**
+   ```powershell
+   .\phase2-openshift-core\local-sim\test-local-sim.ps1 -Cleanup
+   ```
+

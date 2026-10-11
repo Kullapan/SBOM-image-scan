@@ -3,10 +3,24 @@ kind: ConfigMap
 metadata:
   name: corporate-proxy-config
   namespace: secops-sbom
+  labels:
+    app.kubernetes.io/name: corporate-proxy-config
+    app.kubernetes.io/part-of: dependency-track
 data:
-  # Configure corporate HTTP proxy for NVD feeds and Repository Analyzer
+  # Standard environment variables (both upper and lower case for tools like curl, trivy, oc)
   HTTP_PROXY: ""
   HTTPS_PROXY: ""
-  NO_PROXY: "localhost,127.0.0.1,postgres,dtrack-apiserver,dtrack-frontend,image-registry.openshift-image-registry.svc"
-  # Java Options format for Dependency-Track API Server
-  EXTRA_JAVA_OPTIONS: "-XX:+UseG1GC -XX:MaxRAMPercentage=75.0"
+  NO_PROXY: "localhost,127.0.0.1,postgres,dtrack-apiserver,dtrack-frontend,.svc,.cluster.local,image-registry.openshift-image-registry.svc,10.0.0.0/8,172.30.0.0/16"
+  http_proxy: ""
+  https_proxy: ""
+  no_proxy: "localhost,127.0.0.1,postgres,dtrack-apiserver,dtrack-frontend,.svc,.cluster.local,image-registry.openshift-image-registry.svc,10.0.0.0/8,172.30.0.0/16"
+
+  # Extra Java Options for Dependency-Track API Server (proxy, truststore, etc.)
+  # Note: The base container already specifies -XX:+UseParallelGC in JAVA_OPTIONS;
+  # do NOT pass -XX:+UseG1GC here or JVM initialization will fail with "Multiple garbage collectors selected".
+  EXTRA_JAVA_OPTIONS: ""
+
+  # Native Dependency-Track proxy configuration (empty = direct)
+  ALPINE_HTTP_PROXY_ADDRESS: ""
+  ALPINE_HTTP_PROXY_PORT: ""
+  ALPINE_NO_PROXY: "localhost,127.0.0.1,postgres,dtrack-apiserver,dtrack-frontend,.svc,.cluster.local"

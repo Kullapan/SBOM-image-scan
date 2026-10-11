@@ -1,4 +1,5 @@
-FROM dependencytrack/apiserver:4.11.7
+ARG BASE_IMAGE=dependencytrack/apiserver:4.11.7
+FROM ${BASE_IMAGE}
 
 LABEL maintainer="SecOps Team"
 LABEL description="OWASP Dependency-Track API Server hardened for OpenShift Restricted SCC"
@@ -7,13 +8,16 @@ LABEL description="OWASP Dependency-Track API Server hardened for OpenShift Rest
 USER root
 
 # Setup directories for arbitrary non-root UID (OpenShift Restricted SCC)
-# Dependency-Track uses /data for Lucene indexes and temporary files in /tmp
+# Dependency-Track stores Lucene search indexes, embedded templates, and temp files here.
 RUN mkdir -p /data /tmp /etc/ssl/certs && \
     chgrp -R 0 /data /tmp /etc/ssl/certs && \
     chmod -R g=u /data /tmp /etc/ssl/certs
 
-# Expose standard API server port
+# Ensure /data is the default home for arbitrary UIDs
+ENV HOME=/data \
+    ALPINE_DATA_DIRECTORY=/data
+
 EXPOSE 8080
 
-# Run as non-root user (compatible with OpenShift arbitrary UID)
+# Run as non-root user (OpenShift will override with arbitrary UID from namespace range)
 USER 10001
